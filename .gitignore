@@ -6,3 +6,8 @@ __pycache__/
 .env
 .idea/
 *.egg-info/
+
+/docs
+
+# Internal design docs (kept local only)
+docs/
