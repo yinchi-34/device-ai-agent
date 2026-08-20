@@ -1,10 +1,5 @@
 # Codex Instructions
 
-Read these files before implementation:
-
-1. `docs/superpowers/specs/2026-08-17-device-capability-model-design.md`
-2. `docs/superpowers/plans/2026-08-17-phase1-device-foundation-capability.md`
-
 ## Branch behavior
 
 The Codex execution environment may check out the repository on a harness-managed branch such as `work`.
