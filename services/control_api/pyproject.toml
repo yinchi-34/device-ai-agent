@@ -23,3 +23,7 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
+
+[tool.ruff.lint]
+# B008: FastAPI's `Depends(...)` in argument defaults is the intended idiom.
+extend-ignore = ["B008"]
