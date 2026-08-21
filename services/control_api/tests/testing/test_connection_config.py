@@ -1,6 +1,6 @@
 from app.modules.device.service import DeviceService
 from app.modules.testing.config_validation import validate_connection_config
-from app.modules.testing.service import TestingService
+from app.modules.testing.service import TestingService as DeviceTestingService
 from tests.device.helpers import (
     add_start_stop_templates,
     bind_start_stop,
@@ -38,7 +38,7 @@ async def test_validate_connection_persists_verdict(db_session):
     await bind_start_stop(db_session, graph)
     await add_start_stop_templates(db_session, graph)
     await DeviceService(db_session).release_profile(graph["profile"].id)
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     instance = await service.create_instance(
         graph["model"].id, graph["profile"].id, "PUMP-001", "Pump 001"
     )

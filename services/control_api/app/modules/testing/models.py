@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -34,8 +35,10 @@ class DeviceInstance(IdentityMixin, TimestampMixin, SoftDeleteMixin, Base):
         ),
     )
 
-    device_model_id: Mapped[int] = mapped_column(nullable=False)
-    profile_version_id: Mapped[int] = mapped_column(nullable=False)
+    device_model_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    profile_version_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
     instance_code: Mapped[str] = mapped_column(String(128), nullable=False)
     instance_name: Mapped[str] = mapped_column(String(255), nullable=False)
     serial_number: Mapped[str | None] = mapped_column(String(128))

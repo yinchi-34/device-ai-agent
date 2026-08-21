@@ -1,8 +1,10 @@
 import pytest
+from sqlalchemy import BigInteger
 
 from app.core.errors import DomainError
 from app.modules.device.service import DeviceService
-from app.modules.testing.service import TestingService
+from app.modules.testing.models import DeviceInstance
+from app.modules.testing.service import TestingService as DeviceTestingService
 from tests.device.helpers import (
     add_start_stop_templates,
     bind_start_stop,
@@ -22,7 +24,7 @@ async def _released_graph(db_session):
 
 async def test_instance_only_binds_released_profile(db_session):
     graph = await make_profile_graph(db_session)
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     with pytest.raises(DomainError) as excinfo:
         await service.create_instance(
             graph["model"].id, graph["profile"].id, "PUMP-001", "Pump 001"
@@ -33,7 +35,7 @@ async def test_instance_only_binds_released_profile(db_session):
 async def test_profile_must_belong_to_selected_model(db_session):
     graph = await _released_graph(db_session)
     other_model = await make_model(db_session, model_code="OTHER-1")
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     with pytest.raises(DomainError) as excinfo:
         await service.create_instance(
             other_model.id, graph["profile"].id, "PUMP-001", "Pump 001"
@@ -43,7 +45,7 @@ async def test_profile_must_belong_to_selected_model(db_session):
 
 async def test_instance_code_is_unique(db_session):
     graph = await _released_graph(db_session)
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     await service.create_instance(
         graph["model"].id, graph["profile"].id, "PUMP-001", "Pump 001"
     )
@@ -56,7 +58,7 @@ async def test_instance_code_is_unique(db_session):
 
 async def test_connection_protocol_must_belong_to_instance_profile(db_session):
     graph = await _released_graph(db_session)
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     instance = await service.create_instance(
         graph["model"].id, graph["profile"].id, "PUMP-001", "Pump 001"
     )
@@ -72,7 +74,7 @@ async def test_connection_protocol_must_belong_to_instance_profile(db_session):
 
 async def test_connection_created_with_matching_spec(db_session):
     graph = await _released_graph(db_session)
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     instance = await service.create_instance(
         graph["model"].id, graph["profile"].id, "PUMP-001", "Pump 001"
     )
@@ -87,7 +89,7 @@ async def test_connection_created_with_matching_spec(db_session):
 
 async def test_duplicate_connection_name_rejected(db_session):
     graph = await _released_graph(db_session)
-    service = TestingService(db_session)
+    service = DeviceTestingService(db_session)
     instance = await service.create_instance(
         graph["model"].id, graph["profile"].id, "PUMP-001", "Pump 001"
     )
@@ -95,3 +97,10 @@ async def test_duplicate_connection_name_rejected(db_session):
     with pytest.raises(DomainError) as excinfo:
         await service.create_connection(instance.id, graph["spec"].id, "fieldbus")
     assert excinfo.value.code == "duplicate"
+
+
+def test_instance_composite_key_columns_are_bigint():
+    columns = DeviceInstance.__table__.c
+
+    assert isinstance(columns.device_model_id.type, BigInteger)
+    assert isinstance(columns.profile_version_id.type, BigInteger)
