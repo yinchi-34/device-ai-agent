@@ -198,6 +198,7 @@ class DeviceService:
                 "not_found", f"DeviceProtocolSpec {protocol_spec_id} not found", 404
             )
         profile = await self.get_profile(spec.profile_version_id)
+        fields.setdefault("data_type", "int16")
         _ensure_profile_mutable(profile)
         point = DevicePoint(protocol_spec_id=spec.id, **fields)
         self.session.add(point)
