@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "device-ai-agent-control-api"
 version = "0.1.0"
@@ -25,5 +29,10 @@ asyncio_mode = "auto"
 pythonpath = ["."]
 
 [tool.ruff.lint]
+
 # B008: FastAPI's `Depends(...)` in argument defaults is the intended idiom.
 extend-ignore = ["B008"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
