@@ -1,8 +1,10 @@
+import asyncio
+import sys
 from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
@@ -13,8 +15,23 @@ from app.main import create_app
 from app.modules import device, testing  # noqa: F401
 
 
+def pytest_asyncio_loop_factories(config, item):
+    """Use the selector loop required by psycopg's async API on Windows."""
+    del config, item
+    if sys.platform == "win32":
+        return {"selector": asyncio.SelectorEventLoop}
+    return {"default": asyncio.new_event_loop}
+
+
 async def _truncate_all(session: AsyncSession) -> None:
-    tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
+    connection = await session.connection()
+    existing_tables = await connection.run_sync(
+        lambda sync_connection: set(inspect(sync_connection).get_table_names())
+    )
+    tables = ", ".join(
+        table.name for table in Base.metadata.sorted_tables
+        if table.name in existing_tables
+    )
     if tables:
         await session.execute(
             text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE")
