@@ -62,6 +62,7 @@ async def list_category_capabilities(
 ) -> Sequence[m.DeviceCategoryCapability]:
     stmt = (
         select(m.DeviceCategoryCapability)
+        .options(selectinload(m.DeviceCategoryCapability.basic_capability))
         .where(m.DeviceCategoryCapability.device_category_id == category_id)
         .order_by(m.DeviceCategoryCapability.sort_order, m.DeviceCategoryCapability.id)
     )
