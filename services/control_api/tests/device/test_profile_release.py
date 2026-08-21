@@ -97,8 +97,8 @@ async def test_make_default_swaps_atomically(db_session):
 
     second = await make_profile(db_session, graph["model"], "2.0")
     second_spec = await make_protocol_spec(db_session, second)
-    await make_points(db_session, second_spec)
-    graph2 = {**graph, "profile": second}
+    second_points = await make_points(db_session, second_spec)
+    graph2 = {**graph, "profile": second, "points": second_points}
     await bind_start_stop(db_session, graph2)
     await service.release_profile(second.id, make_default=True)
 
