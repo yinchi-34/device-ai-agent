@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -77,3 +78,93 @@ class ProfileCandidatePayload(CandidateModel):
     capability_matches: list[CandidateCapabilityMatch]
     point_bindings: list[CandidatePointBinding]
     unresolved_suggestions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ApiModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SourceDocumentOut(ApiModel):
+    id: int
+    device_model_id: int | None
+    original_file_name: str
+    media_type: str
+    file_size_bytes: int
+    file_hash_sha256: str
+    file_metadata: dict[str, Any]
+    validation_status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExtractionRunOut(ApiModel):
+    id: int
+    source_document_id: int
+    retry_of_run_id: int | None
+    status: str
+    attempt_number: int
+    parser_version: str
+    prompt_version: str
+    candidate_schema_version: str
+    extraction_provider: str
+    extraction_model: str
+    vision_provider: str | None
+    vision_model: str | None
+    embedding_provider: str
+    embedding_model: str
+    parse_metadata: dict[str, Any]
+    usage_metadata: dict[str, Any]
+    error_code: str | None
+    error_detail: dict[str, Any]
+    queued_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CandidateOut(ApiModel):
+    id: int
+    extraction_run_id: int
+    original_payload: dict[str, Any]
+    reviewed_payload: dict[str, Any]
+    schema_errors: list[dict[str, Any]]
+    domain_errors: list[dict[str, Any]]
+    status: str
+    revision: int
+    review_note: str | None
+    reviewed_at: datetime | None
+    imported_profile_version_id: int | None
+    imported_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CandidatePatch(CandidateModel):
+    revision: int = Field(ge=1)
+    payload: dict[str, Any]
+
+
+class CandidateAction(CandidateModel):
+    revision: int = Field(ge=1)
+    note: str | None = None
+
+
+class CandidateImportOut(CandidateModel):
+    profile_version_id: int
+
+
+class DocumentSearchRequest(CandidateModel):
+    query: str = Field(min_length=1, max_length=4000)
+    source_document_id: int | None = None
+    device_model_id: int | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class DocumentSearchResultOut(ApiModel):
+    chunk_id: int
+    source_document_id: int
+    stable_ref: str
+    page_number: int | None
+    content: str
+    similarity: float
