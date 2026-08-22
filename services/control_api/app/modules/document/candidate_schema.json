@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProfileCandidatePayload",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "SourcedString": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "confidence", "evidence_refs"],
+      "properties": {
+        "value": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "NullableSourcedString": {
+      "anyOf": [
+        {"$ref": "#/$defs/SourcedString"},
+        {"type": "null"}
+      ]
+    },
+    "DeviceModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_name", "model_code", "model_name"],
+      "properties": {
+        "existing_device_model_id": {"type": ["integer", "null"]},
+        "vendor_name": {"$ref": "#/$defs/SourcedString"},
+        "model_code": {"$ref": "#/$defs/SourcedString"},
+        "model_name": {"$ref": "#/$defs/SourcedString"},
+        "description": {"$ref": "#/$defs/NullableSourcedString"}
+      }
+    },
+    "Profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": {"$ref": "#/$defs/SourcedString"},
+        "profile_name": {"$ref": "#/$defs/NullableSourcedString"},
+        "description": {"$ref": "#/$defs/NullableSourcedString"}
+      }
+    },
+    "Protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_ref", "code", "protocol"],
+      "properties": {
+        "candidate_ref": {"type": "string"},
+        "code": {"$ref": "#/$defs/SourcedString"},
+        "protocol": {"$ref": "#/$defs/SourcedString"},
+        "display_name": {"$ref": "#/$defs/NullableSourcedString"},
+        "config_schema": {"type": "object"}
+      }
+    },
+    "Point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_ref", "protocol_ref", "code", "name", "data_type",
+        "access_mode"
+      ],
+      "properties": {
+        "candidate_ref": {"type": "string"},
+        "protocol_ref": {"type": "string"},
+        "code": {"$ref": "#/$defs/SourcedString"},
+        "name": {"$ref": "#/$defs/SourcedString"},
+        "description": {"$ref": "#/$defs/NullableSourcedString"},
+        "address_text": {"$ref": "#/$defs/NullableSourcedString"},
+        "object_type": {"$ref": "#/$defs/NullableSourcedString"},
+        "data_type": {"$ref": "#/$defs/SourcedString"},
+        "access_mode": {"$ref": "#/$defs/SourcedString"},
+        "unit": {"$ref": "#/$defs/NullableSourcedString"},
+        "address_spec": {"type": "object"},
+        "value_schema": {"type": "object"},
+        "expected_rule": {"type": "object"}
+      }
+    },
+    "CapabilityMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_ref", "capability_code", "confidence", "evidence_refs"
+      ],
+      "properties": {
+        "candidate_ref": {"type": "string"},
+        "capability_code": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence_refs": {
+          "type": "array", "minItems": 1, "items": {"type": "string"}
+        },
+        "name_override": {"$ref": "#/$defs/NullableSourcedString"}
+      }
+    },
+    "PointBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_ref", "point_ref", "role", "confidence", "evidence_refs"
+      ],
+      "properties": {
+        "capability_ref": {"type": "string"},
+        "point_ref": {"type": "string"},
+        "role": {"type": "string"},
+        "alias": {"type": ["string", "null"]},
+        "is_required": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence_refs": {
+          "type": "array", "minItems": 1, "items": {"type": "string"}
+        }
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "device_model",
+    "profile",
+    "protocols",
+    "points",
+    "capability_matches",
+    "point_bindings",
+    "unresolved_suggestions"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "device_model": {"$ref": "#/$defs/DeviceModel"},
+    "profile": {"$ref": "#/$defs/Profile"},
+    "protocols": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/Protocol"}
+    },
+    "points": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/Point"}
+    },
+    "capability_matches": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/CapabilityMatch"}
+    },
+    "point_bindings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/PointBinding"}
+    },
+    "unresolved_suggestions": {"type": "array"}
+  }
+}
