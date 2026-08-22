@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from io import BytesIO
 from pathlib import Path
@@ -224,15 +225,23 @@ async def test_complete_phase2_business_flow(client, db_session, tmp_path, monke
 
 def test_compose_declares_phase2_runtime():
     project_root = Path(__file__).parents[4]
+    compose_environment = os.environ | {
+        "DEVICE_DATABASE_PASSWORD": "compose-test-password"
+    }
     result = subprocess.run(
         ["docker", "compose", "config", "--format", "json"],
         cwd=project_root,
+        env=compose_environment,
         capture_output=True,
         text=True,
         check=True,
     )
 
     config = json.loads(result.stdout)
+    assert (
+        config["services"]["db"]["environment"]["POSTGRES_PASSWORD"]
+        == "compose-test-password"
+    )
     assert {"db", "redis", "control-api", "document-worker"} <= set(
         config["services"]
     )
@@ -244,3 +253,16 @@ def test_compose_declares_phase2_runtime():
             and mount["target"] == "/data/documents"
             for mount in mounts
         )
+
+    for service_name, target_port in (("db", 5432), ("control-api", 8000)):
+        published_ports = config["services"][service_name]["ports"]
+        assert any(
+            port["host_ip"] == "127.0.0.1" and port["target"] == target_port
+            for port in published_ports
+        )
+
+    for service_name in ("control-api", "document-worker"):
+        database_url = config["services"][service_name]["environment"][
+            "DEVICE_DATABASE_URL"
+        ]
+        assert "compose-test-password" in database_url

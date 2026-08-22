@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = (
-        "postgresql+psycopg://device:device@localhost:5432/device_ai_agent"
+        "postgresql+psycopg://device@localhost:5432/device_ai_agent"
     )
     redis_url: str = "redis://localhost:6379/0"
     document_storage_root: Path = Path("var/documents")

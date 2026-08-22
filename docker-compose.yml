@@ -2,13 +2,13 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: device_ai_agent
-      POSTGRES_USER: device
-      POSTGRES_PASSWORD: device
+      POSTGRES_DB: ${DEVICE_DATABASE_NAME:-device_ai_agent}
+      POSTGRES_USER: ${DEVICE_DATABASE_USER:-device}
+      POSTGRES_PASSWORD: ${DEVICE_DATABASE_PASSWORD:?Set DEVICE_DATABASE_PASSWORD}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${DEVICE_DATABASE_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U device -d device_ai_agent"]
+      test: ["CMD-SHELL", "pg_isready -U ${DEVICE_DATABASE_USER:-device} -d ${DEVICE_DATABASE_NAME:-device_ai_agent}"]
       interval: 2s
       timeout: 3s
       retries: 20
@@ -24,7 +24,7 @@ services:
   control-api:
     build: ./services/control_api
     environment:
-      DEVICE_DATABASE_URL: postgresql+psycopg://device:device@db:5432/device_ai_agent
+      DEVICE_DATABASE_URL: postgresql+psycopg://${DEVICE_DATABASE_USER:-device}:${DEVICE_DATABASE_PASSWORD:?Set DEVICE_DATABASE_PASSWORD}@db:5432/${DEVICE_DATABASE_NAME:-device_ai_agent}
       DEVICE_REDIS_URL: redis://redis:6379/0
       DEVICE_DOCUMENT_STORAGE_ROOT: /data/documents
       DEVICE_DOCUMENT_LLM_BASE_URL: ${DEVICE_DOCUMENT_LLM_BASE_URL:-https://api.openai.com/v1}
@@ -42,7 +42,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${DEVICE_API_PORT:-8000}:8000"
     volumes:
       - document-files:/data/documents
 
@@ -50,7 +50,7 @@ services:
     build: ./services/control_api
     command: celery -A app.modules.document.celery_app:celery_app worker --loglevel=INFO
     environment:
-      DEVICE_DATABASE_URL: postgresql+psycopg://device:device@db:5432/device_ai_agent
+      DEVICE_DATABASE_URL: postgresql+psycopg://${DEVICE_DATABASE_USER:-device}:${DEVICE_DATABASE_PASSWORD:?Set DEVICE_DATABASE_PASSWORD}@db:5432/${DEVICE_DATABASE_NAME:-device_ai_agent}
       DEVICE_REDIS_URL: redis://redis:6379/0
       DEVICE_DOCUMENT_STORAGE_ROOT: /data/documents
       DEVICE_DOCUMENT_LLM_BASE_URL: ${DEVICE_DOCUMENT_LLM_BASE_URL:-https://api.openai.com/v1}

@@ -83,15 +83,17 @@ document worker. The API and worker share the `document-files` volume. The
 database is exposed on host port 5433 for local verification.
 
 ```powershell
+$env:DEVICE_DATABASE_PASSWORD = "replace-with-a-local-secret"
 docker compose up --build -d
 docker compose exec control-api alembic upgrade head
-$env:DEVICE_DATABASE_URL = `
-  "postgresql+psycopg://device:device@localhost:5433/device_ai_agent"
+$env:DEVICE_DATABASE_URL = "postgresql+psycopg://device:$($env:DEVICE_DATABASE_PASSWORD)@localhost:5433/device_ai_agent"
 cd services/control_api
 pytest -v
 alembic current
 alembic check
 ```
 
-Copy `services/control_api/.env.example` before configuring providers. Tests
-use deterministic fakes and do not make live provider calls.
+Use a URL-encoded database password if it contains reserved URL characters.
+Copy `services/control_api/.env.example` before configuring providers. Docker
+Compose binds the API and database ports to `127.0.0.1` by default. Tests use
+deterministic fakes and do not make live provider calls.
