@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -208,3 +209,25 @@ class DocumentChunk(IdentityMixin, Base):
     extraction_run: Mapped[ProfileExtractionRun] = relationship(
         back_populates="chunks"
     )
+
+
+class DocumentChunkEmbedding(IdentityMixin, TimestampMixin, Base):
+    __tablename__ = "document_chunk_embedding"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_chunk_id",
+            "provider",
+            "model",
+            name="uq_chunk_embedding_provider_model",
+        ),
+    )
+
+    document_chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("document_chunk.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(), nullable=False)
+
+    document_chunk: Mapped[DocumentChunk] = relationship()

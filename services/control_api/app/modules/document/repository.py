@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.document.models import (
     DocumentChunk,
+    DocumentChunkEmbedding,
     ProfileExtractionCandidate,
     ProfileExtractionRun,
     SourceDocument,
@@ -39,5 +40,16 @@ class DocumentRepository:
             select(DocumentChunk)
             .where(DocumentChunk.extraction_run_id == run_id)
             .order_by(DocumentChunk.block_index, DocumentChunk.id)
+        )
+        return list((await self.session.scalars(statement)).all())
+
+    async def list_run_embeddings(
+        self, run_id: int
+    ) -> list[DocumentChunkEmbedding]:
+        statement = (
+            select(DocumentChunkEmbedding)
+            .join(DocumentChunk)
+            .where(DocumentChunk.extraction_run_id == run_id)
+            .order_by(DocumentChunkEmbedding.id)
         )
         return list((await self.session.scalars(statement)).all())

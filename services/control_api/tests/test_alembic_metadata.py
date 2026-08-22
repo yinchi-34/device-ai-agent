@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "device_point",
     "device_profile_version",
     "document_chunk",
+    "document_chunk_embedding",
     "profile_extraction_candidate",
     "profile_extraction_run",
     "device_protocol_spec",
