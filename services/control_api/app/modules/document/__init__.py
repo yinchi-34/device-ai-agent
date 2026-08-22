@@ -1,5 +1,6 @@
 """Document intelligence domain package."""
 
+from app.modules.document import models as models
 from app.modules.document.enums import (
     CandidateStatus,
     ChunkContentType,
@@ -14,4 +15,5 @@ __all__ = [
     "ExtractionMethod",
     "ExtractionRunStatus",
     "SourceDocumentStatus",
+    "models",
 ]

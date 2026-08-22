@@ -15,8 +15,12 @@ EXPECTED_TABLES = {
     "device_model",
     "device_point",
     "device_profile_version",
+    "document_chunk",
+    "profile_extraction_candidate",
+    "profile_extraction_run",
     "device_protocol_spec",
     "profile_capability",
+    "source_document",
 }
 
 
@@ -25,7 +29,7 @@ def test_importing_domain_packages_registers_alembic_metadata():
     script = (
         "import json; "
         "from app.db.base import Base; "
-        "from app.modules import device, testing; "
+        "from app.modules import device, document, testing; "
         "print(json.dumps(sorted(Base.metadata.tables)))"
     )
 
