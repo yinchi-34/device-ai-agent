@@ -3,6 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import DomainError
 from app.modules.document.enums import ExtractionRunStatus
 from app.modules.document.models import ProfileExtractionRun, SourceDocument
+from app.modules.document.review_service import (
+    DocumentReviewService as DocumentService,
+)
+
+__all__ = [
+    "DocumentService",
+    "create_extraction_run",
+    "retry_extraction_run",
+]
 
 
 async def create_extraction_run(
