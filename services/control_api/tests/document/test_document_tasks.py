@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 from app.modules.document.celery_app import celery_app
 from app.modules.document.tasks import extract_document
 
@@ -12,3 +15,22 @@ def test_celery_uses_durable_json_tasks():
 def test_extract_task_accepts_only_run_identifier():
     assert extract_document.name == "document.extract"
     assert list(extract_document.run.__annotations__) == ["run_id", "return"]
+
+
+def test_worker_default_modules_register_extraction_task():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from app.modules.document.celery_app import celery_app; "
+                "celery_app.loader.import_default_modules(); "
+                "print('document.extract' in celery_app.tasks)"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "True"

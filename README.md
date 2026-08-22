@@ -60,3 +60,38 @@ cd services/control_api && alembic current
 ## License
 
 See [LICENSE](LICENSE).
+
+## Phase 2 document intelligence
+
+Phase 2 turns PDF/DOCX manuals, including scanned PDFs, into traceable and
+human-reviewable device profile candidates:
+
+- uploads pass through quarantine, size/type/structure/risk validation, and
+  immutable source storage;
+- deterministic PDF/DOCX parsing and scanned-page OCR produce stable evidence
+  references;
+- extraction, vision, and embedding providers have independent endpoints,
+  credentials, models, and timeouts;
+- candidates require schema/domain validation and explicit human approval;
+- approved imports are transactional and idempotent and create only DRAFT
+  profiles; AI processing never releases a profile;
+- pgvector RAG requires an explicit document or device-model scope and filters
+  by embedding provider, model, and dimension.
+
+Docker Compose runs PostgreSQL 16 with pgvector, Redis 7, the API, and a Celery
+document worker. The API and worker share the `document-files` volume. The
+database is exposed on host port 5433 for local verification.
+
+```powershell
+docker compose up --build -d
+docker compose exec control-api alembic upgrade head
+$env:DEVICE_DATABASE_URL = `
+  "postgresql+psycopg://device:device@localhost:5433/device_ai_agent"
+cd services/control_api
+pytest -v
+alembic current
+alembic check
+```
+
+Copy `services/control_api/.env.example` before configuring providers. Tests
+use deterministic fakes and do not make live provider calls.
