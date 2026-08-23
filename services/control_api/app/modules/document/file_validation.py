@@ -15,7 +15,7 @@ DOCX_MEDIA_TYPE = (
 ALLOWED_MEDIA_TYPES = {".pdf": PDF_MEDIA_TYPE, ".docx": DOCX_MEDIA_TYPE}
 _DOCX_RISK_PATH_PARTS = ("word/embeddings/", "word/activex/")
 _DOCX_RISK_FILE_NAMES = ("vbaproject.bin",)
-_PDF_RISK_KEYS = {"/OpenAction", "/AA", "/JavaScript", "/EmbeddedFiles"}
+_PDF_RISK_KEYS = {"/AA", "/JavaScript", "/EmbeddedFiles"}
 
 
 @dataclass(frozen=True)
@@ -69,18 +69,34 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _resolve_pdf_object(value: object) -> object:
+    try:
+        return value.get_object()  # type: ignore[attr-defined]
+    except (AttributeError, PdfReadError, RecursionError):
+        return value
+
+
+def _is_safe_pdf_open_action(value: object) -> bool:
+    action = _resolve_pdf_object(value)
+    if isinstance(action, (list, tuple, str)):
+        return True
+    return isinstance(action, dict) and str(action.get("/S")) == "/GoTo"
+
+
 def _contains_pdf_risk(value: object, seen: set[int] | None = None) -> bool:
     seen = seen or set()
     object_id = id(value)
     if object_id in seen:
         return False
     seen.add(object_id)
-    try:
-        resolved = value.get_object()  # type: ignore[attr-defined]
-    except (AttributeError, PdfReadError, RecursionError):
-        resolved = value
+    resolved = _resolve_pdf_object(value)
     if isinstance(resolved, dict):
-        if _PDF_RISK_KEYS.intersection(str(key) for key in resolved):
+        keys = {str(key) for key in resolved}
+        if _PDF_RISK_KEYS.intersection(keys):
+            return True
+        if "/OpenAction" in resolved and not _is_safe_pdf_open_action(
+            resolved["/OpenAction"]
+        ):
             return True
         return any(_contains_pdf_risk(item, seen) for item in resolved.values())
     if isinstance(resolved, (list, tuple)):

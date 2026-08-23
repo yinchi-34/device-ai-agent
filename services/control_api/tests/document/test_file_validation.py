@@ -2,6 +2,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from pypdf import PdfWriter
+from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
 
 from app.modules.document.file_validation import (
     DocumentValidationError,
@@ -74,3 +75,50 @@ def test_rejects_docx_external_relationship(tmp_path):
         validate_file_content(path, ".docx", max_pdf_pages=10)
 
     assert excinfo.value.code == "document_docx_external_relationship"
+
+
+def test_allows_pdf_internal_goto_open_action(tmp_path):
+    path = tmp_path / "manual.pdf"
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    writer.root_object.update(
+        {
+            NameObject("/OpenAction"): DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/GoTo"),
+                    NameObject("/D"): ArrayObject(
+                        [page.indirect_reference, NameObject("/Fit")]
+                    ),
+                }
+            )
+        }
+    )
+    with path.open("wb") as stream:
+        writer.write(stream)
+
+    metadata = validate_file_content(path, ".pdf", max_pdf_pages=10)
+
+    assert metadata == {"page_count": 1}
+
+
+def test_rejects_pdf_javascript_open_action(tmp_path):
+    path = tmp_path / "script.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.root_object.update(
+        {
+            NameObject("/OpenAction"): DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/JavaScript"),
+                    NameObject("/JS"): TextStringObject("app.alert('unsafe')"),
+                }
+            )
+        }
+    )
+    with path.open("wb") as stream:
+        writer.write(stream)
+
+    with pytest.raises(DocumentValidationError) as excinfo:
+        validate_file_content(path, ".pdf", max_pdf_pages=10)
+
+    assert excinfo.value.code == "document_pdf_active_content"

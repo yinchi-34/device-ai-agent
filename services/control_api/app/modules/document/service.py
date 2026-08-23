@@ -37,7 +37,7 @@ async def create_extraction_run(
         status=ExtractionRunStatus.QUEUED.value,
         attempt_number=attempt_number,
         parser_version="1",
-        prompt_version="1",
+        prompt_version="4",
         candidate_schema_version="1.0",
         extraction_provider=extraction_provider,
         extraction_model=extraction_model,

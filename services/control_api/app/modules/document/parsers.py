@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from unicodedata import category
 from xml.etree.ElementTree import Element
 from zipfile import ZipFile
 
@@ -97,6 +98,16 @@ def parse_docx(path: Path) -> ParsedDocument:
         format="docx", blocks=blocks, metadata={"block_count": len(blocks)}
     )
 
+def _is_usable_pdf_text(text: str, *, min_text_chars: int) -> bool:
+    if len(text) < min_text_chars:
+        return False
+    control_count = sum(
+        category(character) == "Cc" and character not in "\n\r\t"
+        for character in text
+    )
+    return control_count / len(text) <= 0.01
+
+
 
 async def parse_pdf(
     path: Path,
@@ -110,7 +121,7 @@ async def parse_pdf(
     ocr_pages: list[int] = []
     for page_number, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
-        if len(text) >= min_text_chars:
+        if _is_usable_pdf_text(text, min_text_chars=min_text_chars):
             blocks.append(
                 ParsedBlock(
                     content=text,

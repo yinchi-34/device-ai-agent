@@ -80,6 +80,17 @@ class ProfileCandidatePayload(CandidateModel):
     unresolved_suggestions: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ProfileCandidateFragment(CandidateModel):
+    schema_version: Literal["1.0"]
+    device_model: CandidateDeviceModel | None
+    profile: CandidateProfile | None
+    protocols: list[CandidateProtocol]
+    points: list[CandidatePoint]
+    capability_matches: list[CandidateCapabilityMatch]
+    point_bindings: list[CandidatePointBinding]
+    unresolved_suggestions: list[dict[str, Any]]
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

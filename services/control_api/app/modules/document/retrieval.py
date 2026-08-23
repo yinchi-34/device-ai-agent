@@ -8,6 +8,7 @@ from app.core.errors import DomainError
 from app.modules.document.models import (
     DocumentChunk,
     DocumentChunkEmbedding,
+    ProfileExtractionRun,
     SourceDocument,
 )
 from app.modules.document.providers import EmbeddingProvider, ProviderError
@@ -27,6 +28,8 @@ async def embed_run_chunks(
     session: AsyncSession,
     run_id: int,
     provider: EmbeddingProvider,
+    *,
+    batch_size: int = 64,
 ) -> list[DocumentChunkEmbedding]:
     statement = (
         select(DocumentChunk)
@@ -36,21 +39,58 @@ async def embed_run_chunks(
     chunks = list((await session.scalars(statement)).all())
     if not chunks:
         return []
-    result = await provider.embed([chunk.content for chunk in chunks])
-    if len(result.vectors) != len(chunks):
-        raise ProviderError("provider_embedding_count_mismatch")
-    embeddings: list[DocumentChunkEmbedding] = []
-    for chunk, vector in zip(chunks, result.vectors, strict=True):
-        existing = await session.scalar(
-            select(DocumentChunkEmbedding).where(
-                DocumentChunkEmbedding.document_chunk_id == chunk.id,
-                DocumentChunkEmbedding.provider == result.provider,
-                DocumentChunkEmbedding.model == result.model,
-            )
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+
+    run = await session.get(ProfileExtractionRun, run_id)
+    if run is None:
+        raise ValueError(f"Extraction run {run_id} not found")
+    existing_statement = (
+        select(DocumentChunkEmbedding)
+        .join(
+            DocumentChunk,
+            DocumentChunk.id == DocumentChunkEmbedding.document_chunk_id,
         )
-        if existing is not None:
-            embeddings.append(existing)
-            continue
+        .where(
+            DocumentChunk.extraction_run_id == run_id,
+            DocumentChunkEmbedding.provider == run.embedding_provider,
+            DocumentChunkEmbedding.model == run.embedding_model,
+        )
+    )
+    existing_by_chunk_id = {
+        embedding.document_chunk_id: embedding
+        for embedding in (await session.scalars(existing_statement)).all()
+    }
+    missing_chunks = [
+        chunk for chunk in chunks if chunk.id not in existing_by_chunk_id
+    ]
+    if not missing_chunks:
+        return [existing_by_chunk_id[chunk.id] for chunk in chunks]
+
+    vectors: list[list[float]] = []
+    result = None
+    for start in range(0, len(missing_chunks), batch_size):
+        batch = missing_chunks[start : start + batch_size]
+        batch_result = await provider.embed([chunk.content for chunk in batch])
+        if len(batch_result.vectors) != len(batch):
+            raise ProviderError("provider_embedding_count_mismatch")
+        if (batch_result.provider, batch_result.model) != (
+            run.embedding_provider,
+            run.embedding_model,
+        ):
+            raise ProviderError("provider_embedding_metadata_mismatch")
+        if result is not None and (
+            batch_result.provider,
+            batch_result.model,
+            batch_result.dimension,
+        ) != (result.provider, result.model, result.dimension):
+            raise ProviderError("provider_embedding_metadata_mismatch")
+        result = batch_result
+        vectors.extend(batch_result.vectors)
+    if result is None:
+        raise RuntimeError("embedding batches did not execute")
+
+    for chunk, vector in zip(missing_chunks, vectors, strict=True):
         embedding = DocumentChunkEmbedding(
             document_chunk_id=chunk.id,
             provider=result.provider,
@@ -59,9 +99,9 @@ async def embed_run_chunks(
             embedding=vector,
         )
         session.add(embedding)
-        embeddings.append(embedding)
+        existing_by_chunk_id[chunk.id] = embedding
     await session.flush()
-    return embeddings
+    return [existing_by_chunk_id[chunk.id] for chunk in chunks]
 
 
 async def search_document_chunks(

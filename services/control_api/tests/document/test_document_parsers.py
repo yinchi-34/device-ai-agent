@@ -2,7 +2,11 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from pypdf import PdfWriter
 
-from app.modules.document.parsers import parse_docx, parse_pdf
+from app.modules.document.parsers import (
+    _is_usable_pdf_text,
+    parse_docx,
+    parse_pdf,
+)
 from app.modules.document.providers import VisionBlock
 
 
@@ -34,6 +38,14 @@ def test_docx_preserves_paragraph_table_order(tmp_path):
     ]
     assert parsed.blocks[1].content == "Run status -10 °C"
     assert parsed.blocks[2].cells == ["Code", "Address"]
+def test_pdf_text_with_many_control_characters_requires_vision():
+    normal = "Communication settings and Modbus register values. " * 3
+    garbled = "3$&\x03FRPPXQLFDWLRQ\x03VHWWLQJV\x03" * 4
+
+    assert _is_usable_pdf_text(normal, min_text_chars=40) is True
+    assert _is_usable_pdf_text(garbled, min_text_chars=40) is False
+
+
 
 
 class FakeVisionOcrProvider:

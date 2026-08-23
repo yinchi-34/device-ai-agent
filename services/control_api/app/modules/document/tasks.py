@@ -30,6 +30,7 @@ async def _execute(run_id: int) -> None:
                     api_key=settings.document_llm_api_key,
                     model=settings.document_llm_model,
                     timeout_seconds=settings.document_llm_timeout_seconds,
+                    max_output_tokens=settings.document_llm_max_output_tokens,
                 ),
                 vision_provider=OpenAICompatibleVisionProvider(
                     base_url=settings.document_vision_base_url,
@@ -44,6 +45,9 @@ async def _execute(run_id: int) -> None:
                     timeout_seconds=settings.document_embedding_timeout_seconds,
                 ),
                 min_text_chars=settings.document_min_text_chars_per_page,
+                extraction_group_max_tokens=(
+                    settings.document_extraction_group_max_tokens
+                ),
             )
         except ProviderError as exc:
             if exc.retryable:

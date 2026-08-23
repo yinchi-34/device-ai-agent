@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import select
 
 from app.core.errors import DomainError
 from app.modules.document.models import (
@@ -8,7 +9,7 @@ from app.modules.document.models import (
     SourceDocument,
 )
 from app.modules.document.providers import EmbeddingResult, FakeEmbeddingProvider
-from app.modules.document.retrieval import search_document_chunks
+from app.modules.document.retrieval import embed_run_chunks, search_document_chunks
 
 
 def embedding_provider(vector):
@@ -112,3 +113,83 @@ async def test_search_returns_only_requested_document_with_evidence(db_session):
         (first.id, "pdf:page:1:block:1")
     ]
     assert results[0].similarity == pytest.approx(1.0)
+
+
+class BatchEmbeddingProvider:
+    def __init__(self):
+        self.calls = []
+
+    async def embed(self, texts):
+        self.calls.append(list(texts))
+        return EmbeddingResult(
+            vectors=[[1.0, 0.0, 0.0] for _ in texts],
+            provider="fake",
+            model="embed-v1",
+            dimension=3,
+            usage={},
+        )
+
+
+async def test_embed_run_chunks_batches_large_documents(db_session):
+    document = SourceDocument(
+        original_file_name="manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="a" * 64,
+        storage_uri="original/manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    run = ProfileExtractionRun(
+        source_document_id=document.id,
+        status="parsing",
+        extraction_provider="fake",
+        extraction_model="extract-v1",
+        embedding_provider="fake",
+        embedding_model="embed-v1",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    for index in range(5):
+        db_session.add(
+            DocumentChunk(
+                source_document_id=document.id,
+                extraction_run_id=run.id,
+                stable_ref=f"pdf:page:{index + 1}:block:{index + 1}",
+                content_type="text",
+                content=f"chunk {index}",
+                page_number=index + 1,
+                block_index=index + 1,
+                extraction_method="pdf_text",
+                content_hash=str(index) * 64,
+                token_count=2,
+            )
+        )
+    await db_session.flush()
+    provider = BatchEmbeddingProvider()
+
+    embeddings = await embed_run_chunks(db_session, run.id, provider, batch_size=2)
+
+    assert [len(call) for call in provider.calls] == [2, 2, 1]
+    assert len(embeddings) == 5
+
+
+async def test_embed_run_chunks_skips_chunks_with_existing_embeddings(db_session):
+    document = await make_document_with_chunk(
+        db_session,
+        stable_ref="pdf:page:1:block:1",
+        content="already embedded",
+        vector=[1.0, 0.0, 0.0],
+    )
+    run_id = await db_session.scalar(
+        select(ProfileExtractionRun.id).where(
+            ProfileExtractionRun.source_document_id == document.id
+        )
+    )
+    provider = BatchEmbeddingProvider()
+
+    embeddings = await embed_run_chunks(db_session, run_id, provider)
+
+    assert provider.calls == []
+    assert len(embeddings) == 1

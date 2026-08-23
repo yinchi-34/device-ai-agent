@@ -11,6 +11,9 @@ def test_document_settings_have_safe_defaults():
     assert settings.document_max_pdf_pages == 300
     assert settings.document_min_text_chars_per_page == 40
     assert settings.document_storage_root == Path("var/documents")
+    assert settings.document_llm_timeout_seconds == 600
+    assert settings.document_llm_max_output_tokens == 8192
+    assert settings.document_extraction_group_max_tokens == 4000
 
 
 def test_provider_credentials_are_independent(monkeypatch):
