@@ -97,3 +97,28 @@ Use a URL-encoded database password if it contains reserved URL characters.
 Copy `services/control_api/.env.example` before configuring providers. Docker
 Compose binds the API and database ports to `127.0.0.1` by default. Tests use
 deterministic fakes and do not make live provider calls.
+
+## Phase 3 read-only diagnosis agent
+
+Phase 3 adds a bounded model/tool/observation loop with a persistent audit
+trail. The model can inspect device context and released-profile points, search
+manual evidence within the device-model scope, request one named point through
+a read-only gateway, and decode prior raw words with the published profile.
+Write tools, arbitrary addresses, SQL, files, and unrestricted HTTP are not
+available to the agent.
+
+Configure `DEVICE_DIAGNOSIS_LLM_*` for an OpenAI-compatible tool-calling model.
+Configure `DEVICE_DIAGNOSIS_READ_GATEWAY_URL` only when a read-only gateway is
+available. The gateway contract is `POST /read-point`; the Control API resolves
+the point and address from the released profile before calling it. Supported
+observations include `success`, `timeout`, `connection_refused`, and
+`modbus_exception`.
+
+The first synchronous API slice is:
+
+- `POST /api/v1/diagnosis-runs`
+- `POST /api/v1/diagnosis-runs/{run_id}/execute`
+- `GET /api/v1/diagnosis-runs/{run_id}`
+
+Every model action, validated arguments, tool observation, evidence reference,
+and terminal report is stored in `diagnosis_run` / `diagnosis_step`. A hard

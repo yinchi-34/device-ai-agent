@@ -12,7 +12,7 @@ from app.core.config import Settings
 from app.db.base import Base
 
 # Import all model modules so autogenerate sees every table.
-from app.modules import device, document, testing  # noqa: F401
+from app.modules import device, diagnosis, document, testing  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

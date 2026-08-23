@@ -12,7 +12,7 @@ from app.db.session import async_session_factory
 from app.main import create_app
 
 # Import model packages so Base.metadata is fully populated.
-from app.modules import device, document, testing  # noqa: F401
+from app.modules import device, diagnosis, document, testing  # noqa: F401
 
 
 def pytest_asyncio_loop_factories(config, item):
