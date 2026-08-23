@@ -4,6 +4,7 @@ from pypdf import PdfWriter
 
 from app.modules.document import router as document_router
 from tests.document.test_candidate_review import make_candidate
+from tests.document.test_extraction_pipeline import candidate_payload
 
 
 def valid_pdf_bytes():
@@ -76,3 +77,17 @@ async def test_candidate_patch_conflict_and_import_idempotency(
     assert second_import.json()["profile_version_id"] == first_import.json()[
         "profile_version_id"
     ]
+
+
+async def test_candidate_patch_returns_refreshed_candidate(client, db_session):
+    candidate = await make_candidate(db_session)
+    await db_session.commit()
+
+    response = await client.patch(
+        f"/api/v1/extraction-candidates/{candidate.id}",
+        json={"revision": 1, "payload": candidate_payload()},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == 2
+    assert response.json()["updated_at"]

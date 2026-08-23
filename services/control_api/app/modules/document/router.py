@@ -123,6 +123,7 @@ async def update_candidate(
         candidate_id, revision=payload.revision, payload=payload.payload
     )
     await session.commit()
+    await session.refresh(candidate)
     return candidate
 
 
@@ -135,6 +136,7 @@ async def validate_candidate(
 ) -> object:
     candidate = await DocumentService(session).validate_candidate(candidate_id)
     await session.commit()
+    await session.refresh(candidate)
     return candidate
 
 
@@ -151,6 +153,7 @@ async def approve_candidate(
         candidate_id, revision=payload.revision
     )
     await session.commit()
+    await session.refresh(candidate)
     return candidate
 
 
@@ -169,6 +172,7 @@ async def reject_candidate(
         note=payload.note or "",
     )
     await session.commit()
+    await session.refresh(candidate)
     return candidate
 
 
