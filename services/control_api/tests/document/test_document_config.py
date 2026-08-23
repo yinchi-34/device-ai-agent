@@ -20,9 +20,11 @@ def test_provider_credentials_are_independent(monkeypatch):
     monkeypatch.setenv("DEVICE_DOCUMENT_LLM_MODEL", "extract-model")
     monkeypatch.setenv("DEVICE_DOCUMENT_VISION_MODEL", "vision-model")
     monkeypatch.setenv("DEVICE_DOCUMENT_EMBEDDING_MODEL", "embed-model")
+    monkeypatch.setenv("DEVICE_DIAGNOSIS_LLM_MODEL", "diagnosis-model")
 
     settings = Settings()
 
     assert settings.document_llm_model == "extract-model"
     assert settings.document_vision_model == "vision-model"
     assert settings.document_embedding_model == "embed-model"
+    assert settings.diagnosis_llm_model == "diagnosis-model"

@@ -94,9 +94,11 @@ alembic check
 ```
 
 Use a URL-encoded database password if it contains reserved URL characters.
-Copy `services/control_api/.env.example` before configuring providers. Docker
-Compose binds the API and database ports to `127.0.0.1` by default. Tests use
-deterministic fakes and do not make live provider calls.
+Copy the root `.env.example` to `.env` for Docker Compose. The
+`services/control_api/.env.example` file documents direct host-process
+settings; it is not loaded automatically by Compose. Docker Compose binds the
+API and database ports to `127.0.0.1` by default. Tests use deterministic
+fakes and do not make live provider calls.
 
 ## Phase 3 read-only diagnosis agent
 
@@ -122,3 +124,19 @@ The first synchronous API slice is:
 
 Every model action, validated arguments, tool observation, evidence reference,
 and terminal report is stored in `diagnosis_run` / `diagnosis_step`. A hard
+step limit, per-run PostgreSQL advisory lock, and per-step commits prevent
+duplicate execution and preserve the latest completed step after a process
+failure. Terminal reports must cite at least one persisted evidence step.
+
+Versioned diagnosis evaluation cases live in
+`services/control_api/evals/diagnosis/cases.json`. Run repeated live-model
+evaluation from `services/control_api`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/run_diagnosis_evals.py --trials 3
+```
+
+The report includes classification accuracy, handoff/escalation rate,
+dangerous-action rate, total tokens, average latency, and average step count.
+The dataset pins the system Prompt SHA-256 so Prompt changes require an
+explicit baseline review.
