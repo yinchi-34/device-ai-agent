@@ -88,34 +88,29 @@ def test_merge_candidate_fragments_resolves_protocol_from_sibling_fragment():
     ]
 
 
-def test_merge_candidate_fragments_expands_generic_modbus_point_to_transports():
+def test_merge_candidate_fragments_keeps_same_type_protocols_with_distinct_codes():
     protocol_fragment = fragment(group=1, point_code="ignored", address="1")
     protocol_fragment["points"] = []
+    protocol_fragment["protocols"][0]["candidate_ref"] = "protocol:primary"
+    protocol_fragment["protocols"][0]["code"] = sourced(
+        "primary_bus", "pdf:page:1:block:1"
+    )
     rtu = deepcopy(protocol_fragment["protocols"][0])
-    rtu["candidate_ref"] = "protocol:modbus_rtu"
-    rtu["code"] = sourced("modbus_rtu", "pdf:page:1:block:1")
-    rtu["protocol"] = sourced("modbus_rtu", "pdf:page:1:block:1")
+    rtu["candidate_ref"] = "protocol:backup"
+    rtu["code"] = sourced("backup_bus", "pdf:page:1:block:1")
     protocol_fragment["protocols"].append(rtu)
 
-    point_fragment = fragment(group=2, point_code="voltage_l1_n", address="1")
-    point_fragment["protocols"] = []
+    merged = merge_candidate_fragments([protocol_fragment])
 
-    merged = merge_candidate_fragments([protocol_fragment, point_fragment])
-
-    protocol_refs = {item["candidate_ref"] for item in merged["protocols"]}
-    assert len(protocol_refs) == 2
-    assert len(merged["points"]) == 2
-    assert {item["protocol_ref"] for item in merged["points"]} == protocol_refs
+    assert [item["code"]["value"] for item in merged["protocols"]] == [
+        "primary_bus",
+        "backup_bus",
+    ]
 
 
-def test_merge_candidate_fragments_infers_modbus_from_register_address():
+def test_merge_candidate_fragments_does_not_infer_protocol_from_numeric_address():
     protocol_fragment = fragment(group=1, point_code="ignored", address="1")
     protocol_fragment["points"] = []
-    rtu = deepcopy(protocol_fragment["protocols"][0])
-    rtu["candidate_ref"] = "protocol:modbus_rtu"
-    rtu["code"] = sourced("modbus_rtu", "pdf:page:1:block:1")
-    rtu["protocol"] = sourced("modbus_rtu", "pdf:page:1:block:1")
-    protocol_fragment["protocols"].append(rtu)
 
     point_fragment = fragment(group=2, point_code="50075", address="50075")
     point_fragment["protocols"] = []
@@ -123,10 +118,44 @@ def test_merge_candidate_fragments_infers_modbus_from_register_address():
 
     merged = merge_candidate_fragments([protocol_fragment, point_fragment])
 
-    assert len(merged["points"]) == 2
-    assert {item["protocol_ref"] for item in merged["points"]} == {
-        item["candidate_ref"] for item in merged["protocols"]
-    }
+    assert len(merged["points"]) == 1
+    assert merged["points"][0]["protocol_ref"].startswith(
+        "unresolved-protocol:"
+    )
+    assert any(
+        item.get("type") == "unresolved_protocol_ref"
+        for item in merged["unresolved_suggestions"]
+    )
+
+
+def test_merge_candidate_fragments_does_not_bind_unknown_http_ref_to_modbus():
+    candidate = fragment(group=1, point_code="status", address="1")
+    candidate["points"][0]["protocol_ref"] = "protocol:http"
+
+    merged = merge_candidate_fragments([candidate])
+
+    assert merged["points"][0]["protocol_ref"].startswith(
+        "unresolved-protocol:"
+    )
+
+
+def test_merge_candidate_fragments_reports_same_code_definition_conflict():
+    first = fragment(group=1, point_code="ignored", address="1")
+    first["points"] = []
+    second = fragment(group=2, point_code="ignored", address="1")
+    second["points"] = []
+    second["protocols"][0]["protocol"] = sourced(
+        "modbus_rtu", "pdf:page:2:block:2"
+    )
+
+    merged = merge_candidate_fragments([first, second])
+
+    assert len(merged["protocols"]) == 1
+    assert any(
+        item.get("type") == "protocol_definition_conflict"
+        and item.get("code") == "modbus"
+        for item in merged["unresolved_suggestions"]
+    )
 
 
 def test_merge_candidate_fragments_is_idempotent_and_normalizes_values():
