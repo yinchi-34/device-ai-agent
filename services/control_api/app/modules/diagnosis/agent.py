@@ -40,6 +40,7 @@ _FINISH_TOOL = ToolDefinition(
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "evidence_step_numbers": {
                 "type": "array",
+                "minItems": 1,
                 "items": {"type": "integer", "minimum": 1},
             },
         },
@@ -58,6 +59,7 @@ _ESCALATE_TOOL = ToolDefinition(
             "required_action": {"type": "string"},
             "evidence_step_numbers": {
                 "type": "array",
+                "minItems": 1,
                 "items": {"type": "integer", "minimum": 1},
             },
         },
@@ -242,7 +244,7 @@ class DiagnosisAgent:
 
 def _valid_evidence_references(arguments: dict, *, completed_step_count: int) -> bool:
     references = arguments.get("evidence_step_numbers")
-    return isinstance(references, list) and all(
+    return isinstance(references, list) and bool(references) and all(
         isinstance(value, int)
         and not isinstance(value, bool)
         and 1 <= value <= completed_step_count

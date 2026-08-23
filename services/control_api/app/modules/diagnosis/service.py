@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.core.errors import DomainError
 from app.modules.device.enums import ProfileStatus
@@ -13,6 +14,39 @@ from app.modules.diagnosis.models import DiagnosisRun, DiagnosisStep
 from app.modules.diagnosis.tools import RuntimeDiagnosisToolbox
 from app.modules.document.providers import EmbeddingProvider
 from app.modules.testing import repository as testing_repository
+
+_DIAGNOSIS_RUN_LOCK_NAMESPACE = 0x44494147
+
+
+async def _try_acquire_run_lock(
+    session: AsyncSession, run_id: int
+) -> AsyncConnection | None:
+    bind = session.bind
+    if not isinstance(bind, AsyncEngine):
+        raise TypeError("Diagnosis run locking requires an async engine")
+    connection = await bind.connect()
+    try:
+        acquired = await connection.scalar(
+            text("SELECT pg_try_advisory_lock(:namespace, :run_id)"),
+            {"namespace": _DIAGNOSIS_RUN_LOCK_NAMESPACE, "run_id": run_id},
+        )
+    except Exception:
+        await connection.close()
+        raise
+    if acquired:
+        return connection
+    await connection.close()
+    return None
+
+
+async def _release_run_lock(connection: AsyncConnection, run_id: int) -> None:
+    try:
+        await connection.execute(
+            text("SELECT pg_advisory_unlock(:namespace, :run_id)"),
+            {"namespace": _DIAGNOSIS_RUN_LOCK_NAMESPACE, "run_id": run_id},
+        )
+    finally:
+        await connection.close()
 
 
 class DiagnosisService:
@@ -75,6 +109,31 @@ class DiagnosisService:
         read_gateway: ReadOnlyRegisterGateway,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> DiagnosisRun:
+        lock_connection = await _try_acquire_run_lock(self.session, run_id)
+        if lock_connection is None:
+            raise DomainError(
+                "diagnosis_already_running",
+                f"DiagnosisRun {run_id} is already executing",
+                409,
+            )
+        try:
+            return await self._execute_locked(
+                run_id,
+                provider=provider,
+                read_gateway=read_gateway,
+                embedding_provider=embedding_provider,
+            )
+        finally:
+            await _release_run_lock(lock_connection, run_id)
+
+    async def _execute_locked(
+        self,
+        run_id: int,
+        *,
+        provider,
+        read_gateway: ReadOnlyRegisterGateway,
+        embedding_provider: EmbeddingProvider | None = None,
+    ) -> DiagnosisRun:
         run = await self.get_run(run_id)
         if run.status in {"completed", "escalated"}:
             return run
@@ -82,7 +141,7 @@ class DiagnosisService:
         run.error_code = None
         run.error_detail = {}
         run.started_at = run.started_at or datetime.now(UTC)
-        await self.session.flush()
+        await self.session.commit()
 
         existing_steps = [
             AuditStep(
@@ -115,7 +174,7 @@ class DiagnosisService:
                 )
             )
             run.current_step_count = step.sequence_number
-            await self.session.flush()
+            await self.session.commit()
 
         try:
             outcome = await DiagnosisAgent(provider, toolbox).run(
@@ -133,14 +192,14 @@ class DiagnosisService:
             run.error_code = "diagnosis_execution_failed"
             run.error_detail = {"type": type(exc).__name__}
             run.finished_at = datetime.now(UTC)
-            await self.session.flush()
+            await self.session.commit()
             return await self.get_run(run.id)
 
         run.status = outcome.status
         run.final_report = outcome.report
         run.finished_at = datetime.now(UTC)
         run.usage_metadata = _aggregate_usage(outcome.steps)
-        await self.session.flush()
+        await self.session.commit()
         return await self.get_run(run.id)
 
 
