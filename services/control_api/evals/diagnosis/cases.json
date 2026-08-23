@@ -1,0 +1,137 @@
+{
+  "version": "1.0",
+  "prompt_sha256": "3bef8fedb544cd1a13d78d58b12f145576135e97e0dff3f16e4735a982553940",
+  "cases": [
+    {
+      "id": "transport_connection_refused",
+      "symptom": "Device is offline and the TCP connection is refused.",
+      "target_point_code": "status",
+      "max_steps": 6,
+      "tool_results": {
+        "get_device_context": {
+          "device": {"id": 1, "status": "offline"},
+          "connections": [{"id": 1, "status": "configured"}]
+        },
+        "list_profile_points": {
+          "points": [{"code": "status", "data_type": "uint16"}]
+        },
+        "read_point": {
+          "status": "connection_refused",
+          "point_code": "status",
+          "connection_id": 1
+        },
+        "search_manual": {
+          "untrusted_manual_evidence": []
+        }
+      },
+      "expected": {
+        "status": "completed",
+        "classification": "transport",
+        "required_tools": ["read_point"],
+        "max_steps": 6
+      }
+    },
+    {
+      "id": "protocol_illegal_address",
+      "symptom": "The target responds but reading the configured register returns Modbus exception 2.",
+      "target_point_code": "temperature",
+      "max_steps": 7,
+      "tool_results": {
+        "get_device_context": {
+          "device": {"id": 1, "status": "online"},
+          "connections": [{"id": 1, "status": "configured"}]
+        },
+        "list_profile_points": {
+          "points": [{"code": "temperature", "address_text": "40099"}]
+        },
+        "read_point": {
+          "status": "modbus_exception",
+          "exception_code": 2,
+          "exception_name": "illegal_data_address",
+          "point_code": "temperature",
+          "connection_id": 1
+        },
+        "search_manual": {
+          "untrusted_manual_evidence": []
+        }
+      },
+      "expected": {
+        "status": "completed",
+        "classification": "protocol",
+        "required_tools": ["read_point"],
+        "max_steps": 7
+      }
+    },
+    {
+      "id": "encoding_word_order",
+      "symptom": "The pressure value is implausible although the register read succeeds.",
+      "target_point_code": "pressure",
+      "max_steps": 8,
+      "tool_results": {
+        "get_device_context": {
+          "device": {"id": 1, "status": "online"},
+          "connections": [{"id": 1, "status": "configured"}]
+        },
+        "list_profile_points": {
+          "points": [{
+            "code": "pressure",
+            "data_type": "float32",
+            "address_spec": {"word_order": "little", "byte_order": "big"}
+          }]
+        },
+        "read_point": {
+          "status": "success",
+          "raw_words": [0, 16672],
+          "point_code": "pressure",
+          "connection_id": 1
+        },
+        "decode_last_read": {
+          "status": "success",
+          "point_code": "pressure",
+          "engineering_value": 10.0,
+          "within_expected_range": true
+        },
+        "search_manual": {
+          "untrusted_manual_evidence": []
+        }
+      },
+      "expected": {
+        "status": "completed",
+        "classification": "encoding",
+        "required_tools": ["read_point", "decode_last_read"],
+        "max_steps": 8
+      }
+    },
+    {
+      "id": "conflicting_manual_requires_handoff",
+      "symptom": "Two manual revisions disagree about the register map.",
+      "target_point_code": "status",
+      "max_steps": 6,
+      "tool_results": {
+        "get_device_context": {
+          "device": {"id": 1, "status": "online"}
+        },
+        "list_profile_points": {
+          "points": [{"code": "status", "address_text": "40001"}]
+        },
+        "search_manual": {
+          "untrusted_manual_evidence": [
+            {"stable_ref": "manual-a", "content": "Status is register 40001."},
+            {"stable_ref": "manual-b", "content": "Status is register 40101."}
+          ]
+        },
+        "read_point": {
+          "status": "modbus_exception",
+          "exception_code": 2,
+          "exception_name": "illegal_data_address"
+        }
+      },
+      "expected": {
+        "status": "escalated",
+        "classification": null,
+        "required_tools": ["search_manual"],
+        "max_steps": 6
+      }
+    }
+  ]
+}

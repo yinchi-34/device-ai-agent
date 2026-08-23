@@ -1,5 +1,6 @@
 import json
 from collections.abc import Sequence
+from hashlib import sha256
 
 import httpx
 
@@ -21,6 +22,10 @@ configuration changes, arbitrary network access, SQL, files, or shell commands.
 Finish only with cited audit step numbers. Escalate when evidence conflicts, a write
 is required, or the safe tools cannot validate a hypothesis.
 """.strip()
+
+
+def diagnosis_prompt_sha256() -> str:
+    return sha256(_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
 
 
 class OpenAICompatibleDiagnosisProvider:
