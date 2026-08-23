@@ -49,3 +49,15 @@ def test_decode_rejects_a_word_count_that_does_not_match_the_profile_type():
             word_order="big",
             byte_order="big",
         )
+
+
+def test_decode_normalizes_the_shared_float_alias():
+    decoded = decode_register_words(
+        [0x4120, 0x0000],
+        data_type="float",
+        word_order="big",
+        byte_order="big",
+    )
+
+    assert decoded["raw_value"] == pytest.approx(10.0)
+    assert decoded["applied_config"]["data_type"] == "float32"

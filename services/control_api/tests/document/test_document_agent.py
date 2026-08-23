@@ -68,6 +68,9 @@ def test_merge_candidate_fragments_deduplicates_protocols_and_scopes_refs():
     assert {
         point["address_text"]["evidence_refs"][0] for point in merged["points"]
     } == {"pdf:page:1:block:1", "pdf:page:2:block:2"}
+    assert {
+        point["data_type"]["value"] for point in merged["points"]
+    } == {"float32"}
 
 
 def test_merge_candidate_fragments_resolves_protocol_from_sibling_fragment():

@@ -3,25 +3,13 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from app.modules.device.codecs import DATA_TYPE_ALIASES
 from app.modules.device.enums import ProtocolType
 
 _SCOPED_REF_RE = re.compile(
     r"^(?:protocol|point|capability|unresolved-protocol|"
     r"unresolved-point|unresolved-capability):g\d+:"
 )
-_DATA_TYPE_ALIASES = {
-    "bit": "bool",
-    "bool": "bool",
-    "boolean": "bool",
-    "float": "float",
-    "long": "int32",
-    "string": "string",
-    "uint32": "uint32",
-    "unix_ts": "unix_ts",
-    "unix_ts_utc": "unix_ts",
-    "unsigned_long": "uint32",
-    "unsigned_short": "uint16",
-}
 _PROTOCOL_ALIASES = {
     "bacnet_ip": ProtocolType.BACNET_IP.value,
     "bacnetip": ProtocolType.BACNET_IP.value,
@@ -287,7 +275,7 @@ def merge_candidate_fragments(
                     canonical["candidate_ref"] = candidate_ref
                     canonical["protocol_ref"] = protocol_ref
                     canonical["data_type"] = _normalize_sourced_value(
-                        canonical.get("data_type"), _DATA_TYPE_ALIASES
+                        canonical.get("data_type"), DATA_TYPE_ALIASES
                     )
                     canonical["access_mode"] = _normalize_sourced_value(
                         canonical.get("access_mode"),

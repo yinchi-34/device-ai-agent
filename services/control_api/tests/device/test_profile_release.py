@@ -61,6 +61,17 @@ async def test_release_rejects_invalid_config_schema(db_session):
     assert excinfo.value.code == "invalid_config_schema"
 
 
+async def test_release_rejects_point_without_protocol_codec(db_session):
+    graph = await _ready_graph(db_session)
+    graph["points"]["inlet_pressure"].data_type = "string"
+    await db_session.flush()
+
+    with pytest.raises(DomainError) as excinfo:
+        await DeviceService(db_session).release_profile(graph["profile"].id)
+
+    assert excinfo.value.code == "unsupported_point_data_type"
+
+
 async def test_missing_role_blocks_release(db_session):
     graph = await make_profile_graph(db_session)
     service = DeviceService(db_session)

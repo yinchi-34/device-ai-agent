@@ -142,3 +142,18 @@ async def test_invalid_references_and_enums_are_reported(db_session):
         "invalid_access_mode",
         "unknown_point_ref",
     }
+
+
+async def test_modbus_candidate_rejects_data_type_without_registered_codec(db_session):
+    payload = valid_candidate_payload()
+    payload["points"][0]["data_type"] = sourced("string")
+
+    errors = await validate_candidate_domain(
+        db_session, payload, {"pdf:page:1:block:1"}
+    )
+
+    assert any(
+        error["code"] == "unsupported_data_type_for_protocol"
+        and error["path"] == "$.points[0].data_type.value"
+        for error in errors
+    )

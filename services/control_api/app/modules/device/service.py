@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
 from app.modules.device import repository
+from app.modules.device.codecs import (
+    normalize_data_type,
+    protocol_supports_data_type,
+)
 from app.modules.device.command_generation import generate_profile_commands
 from app.modules.device.enums import PointRole, ProfileStatus
 from app.modules.device.models import (
@@ -198,7 +202,20 @@ class DeviceService:
                 "not_found", f"DeviceProtocolSpec {protocol_spec_id} not found", 404
             )
         profile = await self.get_profile(spec.profile_version_id)
-        fields.setdefault("data_type", "int16")
+        requested_data_type = fields.get("data_type", "int16")
+        data_type = normalize_data_type(requested_data_type)
+        if data_type is None or not protocol_supports_data_type(
+            spec.protocol, data_type
+        ):
+            raise DomainError(
+                "unsupported_point_data_type",
+                (
+                    f"Data type {requested_data_type!r} has no codec "
+                    f"for protocol {spec.protocol!r}"
+                ),
+                422,
+            )
+        fields["data_type"] = data_type
         _ensure_profile_mutable(profile)
         point = DevicePoint(protocol_spec_id=spec.id, **fields)
         self.session.add(point)
@@ -352,6 +369,19 @@ class DeviceService:
             raise DomainError(
                 "profile_incomplete", "Profile has no live DevicePoint", status_code=409
             )
+        for point in points:
+            if not protocol_supports_data_type(
+                point.protocol_spec.protocol, point.data_type
+            ):
+                raise DomainError(
+                    "unsupported_point_data_type",
+                    (
+                        f"Point {point.code!r} data type {point.data_type!r} "
+                        f"has no codec for protocol "
+                        f"{point.protocol_spec.protocol!r}"
+                    ),
+                    status_code=409,
+                )
         for spec in specs:
             if spec.config_schema:
                 try:

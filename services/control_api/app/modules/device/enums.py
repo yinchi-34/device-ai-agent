@@ -29,6 +29,17 @@ class ProtocolType(StrEnum):
     OPCUA = "opcua"
 
 
+class DataType(StrEnum):
+    BOOL = "bool"
+    UINT16 = "uint16"
+    INT16 = "int16"
+    UINT32 = "uint32"
+    INT32 = "int32"
+    FLOAT32 = "float32"
+    STRING = "string"
+    UNIX_TS = "unix_ts"
+
+
 class AccessMode(StrEnum):
     R = "R"
     W = "W"

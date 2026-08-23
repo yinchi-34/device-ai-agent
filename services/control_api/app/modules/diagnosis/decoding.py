@@ -2,18 +2,12 @@ import struct
 from decimal import Decimal
 from typing import Any
 
+from app.modules.device.codecs import get_register_codec
+from app.modules.device.enums import DataType
+
 
 class DecodeError(ValueError):
     pass
-
-
-_TYPE_FORMATS: dict[str, tuple[int, str]] = {
-    "uint16": (1, "H"),
-    "int16": (1, "h"),
-    "uint32": (2, "I"),
-    "int32": (2, "i"),
-    "float32": (2, "f"),
-}
 
 
 def decode_register_words(
@@ -27,11 +21,15 @@ def decode_register_words(
     expected_rule: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Decode exactly as configured; never search alternate interpretations."""
-    if data_type not in _TYPE_FORMATS:
+    registered = get_register_codec(data_type)
+    if registered is None:
         raise DecodeError(f"unsupported data type: {data_type}")
-    required_words, format_code = _TYPE_FORMATS[data_type]
+    normalized_data_type, codec = registered
+    required_words, format_code = codec.words, codec.struct_format
     if len(words) != required_words:
-        raise DecodeError(f"{data_type} requires {required_words} register words")
+        raise DecodeError(
+            f"{normalized_data_type} requires {required_words} register words"
+        )
     if word_order not in {"big", "little"}:
         raise DecodeError("word_order must be 'big' or 'little'")
     if byte_order not in {"big", "little"}:
@@ -46,6 +44,8 @@ def decode_register_words(
     payload = b"".join(chunks)
     prefix = ">" if byte_order == "big" else "<"
     raw_value = struct.unpack(prefix + format_code, payload)[0]
+    if normalized_data_type == DataType.BOOL.value:
+        raw_value = bool(raw_value)
     scale_value = float(scale)
     offset_value = float(offset)
     engineering_value = float(raw_value) * scale_value + offset_value
@@ -66,7 +66,7 @@ def decode_register_words(
         "unit": rule.get("unit"),
         "within_expected_range": within_expected_range,
         "applied_config": {
-            "data_type": data_type,
+            "data_type": normalized_data_type,
             "word_order": word_order,
             "byte_order": byte_order,
             "scale": scale_value,

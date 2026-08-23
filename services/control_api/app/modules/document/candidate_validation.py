@@ -6,6 +6,10 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.device import repository as device_repository
+from app.modules.device.codecs import (
+    normalize_data_type,
+    protocol_supports_data_type,
+)
 from app.modules.device.enums import AccessMode, PointRole, ProtocolType
 from app.modules.document.schemas import ProfileCandidatePayload
 
@@ -129,6 +133,10 @@ async def validate_candidate_domain(
     valid_protocols = {item.value for item in ProtocolType}
     valid_access_modes = {item.value for item in AccessMode}
     valid_roles = {item.value for item in PointRole}
+    protocols_by_ref = {
+        item["candidate_ref"]: item["protocol"]["value"]
+        for item in payload["protocols"]
+    }
 
     for index, protocol in enumerate(payload["protocols"]):
         value = protocol["protocol"]["value"]
@@ -158,6 +166,31 @@ async def validate_candidate_domain(
                     "message": f"Access mode '{access_mode}' is not supported",
                 }
             )
+        data_type = point["data_type"]["value"]
+        normalized_data_type = normalize_data_type(data_type)
+        if normalized_data_type is None:
+            errors.append(
+                {
+                    "code": "invalid_data_type",
+                    "path": f"$.points[{index}].data_type.value",
+                    "message": f"Data type '{data_type}' is not supported",
+                }
+            )
+        else:
+            protocol = protocols_by_ref.get(point["protocol_ref"])
+            if protocol is not None and not protocol_supports_data_type(
+                protocol, normalized_data_type
+            ):
+                errors.append(
+                    {
+                        "code": "unsupported_data_type_for_protocol",
+                        "path": f"$.points[{index}].data_type.value",
+                        "message": (
+                            f"Data type '{normalized_data_type}' has no codec "
+                            f"for protocol '{protocol}'"
+                        ),
+                    }
+                )
     for index, capability in enumerate(payload["capability_matches"]):
         code = capability["capability_code"]
         if await device_repository.get_capability_by_code(session, code) is None:
