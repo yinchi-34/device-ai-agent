@@ -10,6 +10,7 @@ def test_celery_uses_durable_json_tasks():
     assert celery_app.conf.task_reject_on_worker_lost is True
     assert celery_app.conf.task_serializer == "json"
     assert celery_app.conf.accept_content == ["json"]
+    assert celery_app.conf.broker_transport_options["visibility_timeout"] == 21600
 
 
 def test_extract_task_accepts_only_run_identifier():

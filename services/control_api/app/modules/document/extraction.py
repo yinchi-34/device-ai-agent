@@ -449,7 +449,7 @@ async def _execute_extraction_run_locked(
     embedding_provider: EmbeddingProvider,
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
-    extraction_group_max_tokens: int = 4000,
+    extraction_group_max_tokens: int = 2000,
 ) -> ProfileExtractionRun:
     statement = (
         select(ProfileExtractionRun)
@@ -592,7 +592,7 @@ async def execute_extraction_run(
     embedding_provider: EmbeddingProvider,
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
-    extraction_group_max_tokens: int = 4000,
+    extraction_group_max_tokens: int = 2000,
 ) -> ProfileExtractionRun:
     lock_connection = await _try_acquire_run_lock(session, run_id)
     if lock_connection is None:

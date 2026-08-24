@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from collections.abc import Sequence
@@ -7,7 +8,8 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
-from app.modules.device.enums import AccessMode, PointRole, ProtocolType
+from app.modules.device.codecs import REGISTER_CODEC_REGISTRY
+from app.modules.device.enums import AccessMode, DataType, PointRole, ProtocolType
 from app.modules.document.chunking import NormalizedChunk
 from app.modules.document.providers import (
     EmbeddingResult,
@@ -24,12 +26,22 @@ _EXTRACTION_DOMAIN_CONSTRAINTS = {
     "protocol_values": [item.value for item in ProtocolType],
     "access_mode_values": [item.value for item in AccessMode],
     "point_role_values": [item.value for item in PointRole],
+    "data_type_values": [item.value for item in DataType],
+    "register_codec_data_type_values": [
+        item.value for item in REGISTER_CODEC_REGISTRY
+    ],
 }
 _EXTRACTION_SYSTEM_PROMPT = """
 Return exactly one JSON object matching the provided strict JSON schema. Use only facts
 in chunks and only supplied stable_ref values in evidence_refs. Extract EVERY distinct
 protocol point or register row present in the chunks; never sample representative points
 or replace rows with prose summaries. Use only domain_constraints enum values.
+Only create a point when the evidence identifies a real protocol address/register/object
+and its payload format. Do not convert function-code support tables, request/response
+frame examples, or local UI/menu configuration fields into points. For register protocols,
+use only register_codec_data_type_values; put unsupported formats in an unresolved
+suggestion instead of inventing a type. Use a canonical protocol code equal to the protocol
+enum value, and keep that code stable across chunk groups.
 capability_matches may only use codes from context.capability_catalog; when that catalog
 is absent or empty, return empty capability_matches and point_bindings. Do not fabricate
 unsupported values; use null or an empty array/object where the schema allows. Set
@@ -43,6 +55,14 @@ by this chunk group and only supplied stable_ref values in evidence_refs. Extrac
 distinct protocol point or register row; never sample representative rows. When device
 or profile metadata is not present in this group, return null for that object. Use empty
 arrays for absent protocols, points, capability matches, bindings, and suggestions.
+Only create a point when the evidence identifies a real protocol address/register/object
+and its payload format. Do not convert function-code support tables, request/response
+frame examples, or local UI/menu configuration fields into points. For register protocols,
+use only register_codec_data_type_values; put unsupported formats in an unresolved
+suggestion instead of inventing a type. Use a canonical protocol code equal to the protocol
+enum value, and keep that code stable across chunk groups. If a section heading gives
+clear protocol evidence, include that canonical protocol definition in the same fragment
+so its points never reference an undefined protocol.
 Use only domain_constraints enum values. Do not fabricate unsupported values. Set
 schema_version to "1.0".
 """.strip()
@@ -149,14 +169,15 @@ class _OpenAICompatibleProvider:
     async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         try:
-            async with httpx.AsyncClient(
-                base_url=self.base_url,
-                headers=headers,
-                timeout=self.timeout_seconds,
-                transport=self.transport,
-            ) as client:
-                response = await client.post(path, json=payload)
-        except httpx.TimeoutException:
+            async with asyncio.timeout(self.timeout_seconds):
+                async with httpx.AsyncClient(
+                    base_url=self.base_url,
+                    headers=headers,
+                    timeout=self.timeout_seconds,
+                    transport=self.transport,
+                ) as client:
+                    response = await client.post(path, json=payload)
+        except (TimeoutError, httpx.TimeoutException):
             raise ProviderError(
                 "provider_timeout", retryable=True
             ) from None

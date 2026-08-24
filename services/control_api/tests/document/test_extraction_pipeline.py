@@ -121,7 +121,7 @@ async def pipeline_setup(db_session, tmp_path):
 
 async def test_pipeline_reaches_awaiting_review(db_session, tmp_path):
     run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
-    assert run.prompt_version == "4"
+    assert run.prompt_version == "5"
 
     await execute_extraction_run(
         db_session,

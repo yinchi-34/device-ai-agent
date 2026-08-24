@@ -10,6 +10,9 @@ celery_app = Celery(
     include=["app.modules.document.tasks"],
 )
 celery_app.conf.update(
+    broker_transport_options={
+        "visibility_timeout": settings.document_task_visibility_timeout_seconds,
+    },
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_ignore_result=True,

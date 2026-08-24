@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx
@@ -44,6 +45,9 @@ async def test_extraction_adapter_returns_json_and_usage():
         assert "\"$ref\"" not in serialized_schema
         assert "EVERY distinct" in body["messages"][0]["content"]
         assert "protocol point" in body["messages"][0]["content"]
+        assert "function-code support tables" in body["messages"][0]["content"]
+        assert "local UI/menu configuration fields" in body["messages"][0]["content"]
+        assert "canonical protocol code" in body["messages"][0]["content"]
         assert set(schema["required"]) == {
             "schema_version",
             "device_model",
@@ -71,6 +75,25 @@ async def test_extraction_adapter_returns_json_and_usage():
                 "measurement",
                 "input",
                 "output",
+            ],
+            "data_type_values": [
+                "bool",
+                "uint16",
+                "int16",
+                "uint32",
+                "int32",
+                "float32",
+                "string",
+                "unix_ts",
+            ],
+            "register_codec_data_type_values": [
+                "bool",
+                "uint16",
+                "int16",
+                "uint32",
+                "int32",
+                "float32",
+                "unix_ts",
             ],
         }
         return httpx.Response(
@@ -117,6 +140,38 @@ async def test_api_key_is_never_in_provider_error():
     assert excinfo.value.code == "provider_connection_error"
     assert "secret-key" not in str(excinfo.value)
     assert "secret-key" not in repr(excinfo.value)
+
+
+async def test_provider_timeout_is_an_absolute_request_deadline():
+    async def slow_response(request):
+        await asyncio.sleep(0.2)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps({"schema_version": "1.0"})
+                        }
+                    }
+                ],
+                "usage": {},
+            },
+        )
+
+    provider = OpenAICompatibleExtractionProvider(
+        base_url="https://example.test/v1",
+        api_key="secret",
+        model="extract",
+        timeout_seconds=0.01,
+        transport=httpx.MockTransport(slow_response),
+    )
+
+    with pytest.raises(ProviderError) as excinfo:
+        await provider.extract(chunks=[sample_chunk()], context={})
+
+    assert excinfo.value.code == "provider_timeout"
+    assert excinfo.value.retryable is True
 
 
 async def test_embedding_adapter_rejects_dimension_mismatch():
