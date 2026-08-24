@@ -15,6 +15,10 @@ from app.main import create_app
 from app.modules import device, diagnosis, document, testing  # noqa: F401
 
 
+def _is_test_database_name(database_name: str) -> bool:
+    return database_name.casefold().endswith("_test")
+
+
 def pytest_asyncio_loop_factories(config, item):
     """Use the selector loop required by psycopg's async API on Windows."""
     del config, item
@@ -24,6 +28,14 @@ def pytest_asyncio_loop_factories(config, item):
 
 
 async def _truncate_all(session: AsyncSession) -> None:
+    database_name = await session.scalar(text("SELECT current_database()"))
+    if not isinstance(database_name, str) or not _is_test_database_name(
+        database_name
+    ):
+        raise RuntimeError(
+            "Refusing destructive test setup outside a *_test database; "
+            f"connected database is {database_name!r}"
+        )
     connection = await session.connection()
     existing_tables = await connection.run_sync(
         lambda sync_connection: set(inspect(sync_connection).get_table_names())

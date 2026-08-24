@@ -86,14 +86,19 @@ database is exposed on host port 5433 for local verification.
 $env:DEVICE_DATABASE_PASSWORD = "replace-with-a-local-secret"
 docker compose up --build -d
 docker compose exec control-api alembic upgrade head
-$env:DEVICE_DATABASE_URL = "postgresql+psycopg://device:$($env:DEVICE_DATABASE_PASSWORD)@localhost:5433/device_ai_agent"
+docker compose exec db createdb -U device device_ai_agent_test
+$env:DEVICE_DATABASE_URL = "postgresql+psycopg://device:$($env:DEVICE_DATABASE_PASSWORD)@localhost:5433/device_ai_agent_test"
 cd services/control_api
+alembic upgrade head
 pytest -v
 alembic current
 alembic check
 ```
 
 Use a URL-encoded database password if it contains reserved URL characters.
+Create `device_ai_agent_test` only once; `createdb` reports that it already
+exists on later setup runs. Pytest refuses to truncate any database whose name
+does not end in `_test`.
 Copy the root `.env.example` to `.env` for Docker Compose. The
 `services/control_api/.env.example` file documents direct host-process
 settings; it is not loaded automatically by Compose. Docker Compose binds the
