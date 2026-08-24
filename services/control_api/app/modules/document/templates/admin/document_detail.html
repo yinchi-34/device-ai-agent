@@ -1,0 +1,29 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ document.original_file_name }} · 设备文档审核{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="toolbar">
+    <h2 style="margin-right:auto">{{ document.original_file_name }}</h2>
+    <a class="button secondary" href="/admin/documents/{{ document.id }}/content" target="_blank">打开原文</a>
+    <form action="/admin/documents/{{ document.id }}/extract" method="post"><button type="submit">启动 AI 提取</button></form>
+  </div>
+  <p class="muted">文档 #{{ document.id }} · {{ document.media_type }} · {{ document.file_size_bytes }} bytes · {{ document.validation_status }}</p>
+</section>
+<section class="card">
+  <h2>提取历史</h2>
+  <table>
+    <thead><tr><th>Run</th><th>状态</th><th>模型</th><th>Candidate</th><th>错误</th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+      <tr>
+        <td>#{{ run.id }} / attempt {{ run.attempt_number }}</td>
+        <td><span class="status">{{ run.status }}</span></td>
+        <td>{{ run.extraction_model }}<br><span class="muted">embedding: {{ run.embedding_model }}</span></td>
+        <td>{% if run.candidate %}<a href="/admin/candidates/{{ run.candidate.id }}">{{ run.candidate.status }} · rev {{ run.candidate.revision }}</a>{% else %}—{% endif %}</td>
+        <td class="errors">{% if run.error_code %}{{ run.error_code }}: {{ run.error_detail }}{% else %}—{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">尚未运行提取。</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

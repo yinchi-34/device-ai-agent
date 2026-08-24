@@ -1,0 +1,31 @@
+{% extends "admin/base.html" %}
+{% block title %}文档列表 · 设备文档审核{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>上传设备手册</h2>
+  <form class="toolbar" action="/admin/documents" method="post" enctype="multipart/form-data">
+    <input name="file" type="file" accept=".pdf,.docx" required style="max-width:520px">
+    <button type="submit">上传</button>
+  </form>
+  <p class="muted">支持 PDF / DOCX。上传后启动 AI 提取，完成后在这里审核证据和 JSON。</p>
+</section>
+<section class="card">
+  <h2>文档与最新提取状态</h2>
+  <table>
+    <thead><tr><th>文档</th><th>校验</th><th>提取任务</th><th>Candidate</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td><a href="/admin/documents/{{ row.document.id }}">{{ row.document.original_file_name }}</a><br><span class="muted">#{{ row.document.id }}</span></td>
+        <td><span class="status">{{ row.document.validation_status }}</span></td>
+        <td>{% if row.run %}<span class="status">{{ row.run.status }}</span><br><span class="muted">run #{{ row.run.id }}</span>{% else %}—{% endif %}</td>
+        <td>{% if row.candidate %}<span class="status">{{ row.candidate.status }}</span><br><span class="muted">rev {{ row.candidate.revision }}</span>{% else %}—{% endif %}</td>
+        <td>{% if row.candidate %}<a class="button" href="/admin/candidates/{{ row.candidate.id }}">开始审核</a>{% else %}<a class="button secondary" href="/admin/documents/{{ row.document.id }}">查看</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">暂无文档。先上传一份真实设备手册。</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

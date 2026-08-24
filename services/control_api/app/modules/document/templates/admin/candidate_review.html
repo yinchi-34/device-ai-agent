@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}
+{% block title %}Candidate #{{ candidate.id }} · 设备文档审核{% endblock %}
+{% block content %}
+<div class="toolbar" style="margin-bottom:14px">
+  <a href="/admin/documents/{{ document.id }}">← {{ document.original_file_name }}</a>
+  <span class="status">{{ candidate.status }}</span><span class="muted">revision {{ candidate.revision }}</span>
+</div>
+<div class="grid">
+  <div>
+    <section class="card">
+      <div class="toolbar"><h2 style="margin-right:auto">原文与证据</h2><a href="/admin/documents/{{ document.id }}/content" target="_blank">新窗口打开</a></div>
+      {% if document.media_type == "application/pdf" %}
+        <iframe id="document-preview" src="/admin/documents/{{ document.id }}/content"></iframe>
+      {% else %}
+        <p class="muted">DOCX 由浏览器下载/打开；下方展示 AI 引用的原文块。</p>
+      {% endif %}
+      {% for chunk in evidence %}
+        <article class="evidence">
+          <div class="toolbar">
+            <strong>{{ chunk.stable_ref }}</strong>
+            {% if chunk.page_number %}<a href="/admin/documents/{{ document.id }}/content#page={{ chunk.page_number }}" target="document-preview">第 {{ chunk.page_number }} 页</a>{% endif %}
+          </div>
+          <div class="muted">bbox {{ chunk.bounding_box or "—" }} · {{ chunk.extraction_method }} · confidence {{ chunk.extraction_confidence or "—" }}</div>
+          <pre>{{ chunk.content }}</pre>
+        </article>
+      {% else %}<p class="muted">当前 Candidate 没有引用证据。</p>{% endfor %}
+      {% if missing_refs %}<p class="errors">缺失证据引用：{{ missing_refs|join(", ") }}</p>{% endif %}
+    </section>
+  </div>
+  <div>
+    <section class="card">
+      <h2>AI 结构化结果</h2>
+      <form action="/admin/candidates/{{ candidate.id }}/save" method="post">
+        <input type="hidden" name="revision" value="{{ candidate.revision }}">
+        <textarea id="reviewed-payload" name="payload_json" spellcheck="false">{{ payload_json }}</textarea>
+        <div class="toolbar" style="margin-top:12px"><button type="submit">保存并校验 JSON</button></div>
+      </form>
+      {% if candidate.schema_errors %}<h3>Schema 错误</h3><div class="errors">{{ candidate.schema_errors }}</div>{% endif %}
+      {% if candidate.domain_errors %}<h3>领域错误</h3><div class="errors">{{ candidate.domain_errors }}</div>{% endif %}
+    </section>
+    <section class="card">
+      <h2>审核动作</h2>
+      <div class="toolbar">
+        <form action="/admin/candidates/{{ candidate.id }}/validate" method="post"><button class="secondary" type="submit">重新校验</button></form>
+        <form action="/admin/candidates/{{ candidate.id }}/approve" method="post"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button type="submit">批准</button></form>
+        <form action="/admin/candidates/{{ candidate.id }}/import" method="post"><button type="submit">导入数据库</button></form>
+      </div>
+      <form action="/admin/candidates/{{ candidate.id }}/reject" method="post" style="margin-top:14px">
+        <input type="hidden" name="revision" value="{{ candidate.revision }}">
+        <div class="toolbar"><input type="text" name="note" placeholder="拒绝原因" required><button class="danger" type="submit">拒绝</button></div>
+      </form>
+      {% if candidate.review_note %}<p>审核备注：{{ candidate.review_note }}</p>{% endif %}
+      {% if candidate.imported_profile_version_id %}<p>已导入 ProfileVersion #{{ candidate.imported_profile_version_id }}</p>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

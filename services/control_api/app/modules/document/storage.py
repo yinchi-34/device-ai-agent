@@ -104,10 +104,13 @@ class FileSystemDocumentStorage:
         )
 
     def open(self, storage_uri: str) -> BinaryIO:
+        return self.resolve_path(storage_uri).open("rb")
+
+    def resolve_path(self, storage_uri: str) -> Path:
         path = (self.root / Path(storage_uri)).resolve()
         if not path.is_relative_to(self.root):
             raise ValueError("Storage URI escapes the document root")
-        return path.open("rb")
+        return path
 
     def remove_quarantine(self, stored: StoredDocument) -> None:
         quarantine_root = (self.root / "quarantine").resolve()

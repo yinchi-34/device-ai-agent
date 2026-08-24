@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    admin_username: str = "admin"
+    admin_password: str = ""
+
     database_url: str = (
         "postgresql+psycopg://device@localhost:5432/device_ai_agent"
     )
