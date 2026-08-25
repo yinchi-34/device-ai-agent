@@ -39,4 +39,3 @@ def test_timeout_allows_two_bounded_retries_then_stops():
         )["error_code"]
         == "read_retry_limit_reached"
     )
-

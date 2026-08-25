@@ -34,4 +34,3 @@ async def test_model_failure_is_persisted_as_queryable_run_state(db_session):
             f"/api/v1/diagnosis-runs/{created.json()['id']}"
         )
         assert fetched.json()["status"] == "failed"
-
