@@ -305,6 +305,7 @@ async def candidate_review(
                 "unresolved_suggestions", []
             ),
             "evidence": evidence,
+            "evidence_by_ref": {chunk.stable_ref: chunk for chunk in chunks},
             "missing_refs": missing_refs,
             "message": request.query_params.get("message"),
         },

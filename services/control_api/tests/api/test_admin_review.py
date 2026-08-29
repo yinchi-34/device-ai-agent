@@ -1,9 +1,11 @@
 import json
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.main import create_app
 from app.modules.document.models import (
+    DocumentChunk,
     ProfileExtractionCandidate,
     ProfileExtractionRun,
     SourceDocument,
@@ -124,6 +126,30 @@ async def test_candidate_review_shows_payload_and_traceable_evidence(
     assert "Run status register 40001" in response.text
     assert "docx:block:1" in response.text
     assert "reviewed-payload" in response.text
+
+
+async def test_candidate_evidence_links_target_source_card_and_pdf_page(
+    db_session, monkeypatch
+):
+    candidate = await make_candidate(db_session)
+    chunk = await db_session.scalar(
+        select(DocumentChunk).where(
+            DocumentChunk.extraction_run_id == candidate.extraction_run_id
+        )
+    )
+    chunk.page_number = 12
+    chunk.bounding_box = [10.0, 20.0, 100.0, 40.0]
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        response = await client.get(f"/admin/candidates/{candidate.id}")
+
+    assert response.status_code == 200
+    assert 'class="evidence-link"' in response.text
+    assert 'data-evidence-ref="docx:block:1"' in response.text
+    assert 'data-evidence-card="docx:block:1"' in response.text
+    assert 'data-page="12"' in response.text
+    assert "scrollIntoView" in response.text
 
 
 async def test_candidate_review_renders_structured_sections_and_change_diff(

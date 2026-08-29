@@ -15,7 +15,7 @@
         <p class="muted">DOCX 由浏览器下载/打开；下方展示 AI 引用的原文块。</p>
       {% endif %}
       {% for chunk in evidence %}
-        <article class="evidence">
+        <article class="evidence" data-evidence-card="{{ chunk.stable_ref }}">
           <div class="toolbar">
             <strong>{{ chunk.stable_ref }}</strong>
             {% if chunk.page_number %}<a href="/admin/documents/{{ document.id }}/content#page={{ chunk.page_number }}" target="document-preview">第 {{ chunk.page_number }} 页</a>{% endif %}
@@ -43,7 +43,15 @@
                     <div class="review-value">{{ field.display_value }}</div>
                     {% if field.changed %}<div class="changed-badge">人工修改 · 原值：{{ field.original_display_value }}</div>{% endif %}
                     {% if field.confidence is not none %}<div class="review-meta">置信度 {{ "%.0f"|format(field.confidence * 100) }}%</div>{% endif %}
-                    {% if field.evidence_refs %}<div class="review-meta">来源：{{ field.evidence_refs|join(", ") }}</div>{% endif %}
+                    {% if field.evidence_refs %}
+                      <div class="review-meta">
+                        来源：
+                        {% for ref in field.evidence_refs %}
+                          {% set source = evidence_by_ref.get(ref) %}
+                          <button type="button" class="evidence-link{% if not source %} missing{% endif %}" data-evidence-ref="{{ ref }}"{% if source and source.page_number %} data-page="{{ source.page_number }}"{% endif %}{% if not source %} disabled title="证据引用不存在"{% endif %}>{{ ref }}{% if source and source.page_number %} · 第 {{ source.page_number }} 页{% endif %}</button>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
                   </div>
                 {% endfor %}
               </div>
@@ -86,4 +94,26 @@
     </section>
   </div>
 </div>
+<script>
+(() => {
+  const preview = document.getElementById("document-preview");
+  const evidenceCards = Array.from(document.querySelectorAll("[data-evidence-card]"));
+  document.querySelectorAll(".evidence-link:not(:disabled)").forEach((button) => {
+    button.addEventListener("click", () => {
+      evidenceCards.forEach((card) => card.classList.remove("active"));
+      const target = evidenceCards.find(
+        (card) => card.dataset.evidenceCard === button.dataset.evidenceRef,
+      );
+      if (target) {
+        target.classList.add("active");
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      if (preview && button.dataset.page) {
+        const baseUrl = preview.src.split("#", 1)[0];
+        preview.src = `${baseUrl}#page=${encodeURIComponent(button.dataset.page)}`;
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}
