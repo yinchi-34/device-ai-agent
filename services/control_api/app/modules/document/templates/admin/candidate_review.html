@@ -33,6 +33,7 @@
       <h2>AI 结构化结果</h2>
       {% if candidate_editable %}
       <form action="/admin/candidates/{{ candidate.id }}/save-fields" method="post">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="revision" value="{{ candidate.revision }}">
       {% endif %}
       {% for section in review_sections %}
@@ -90,6 +91,7 @@
       <details>
         <summary>高级 JSON 编辑</summary>
         <form action="/admin/candidates/{{ candidate.id }}/save" method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="revision" value="{{ candidate.revision }}">
           <textarea id="reviewed-payload" name="payload_json" spellcheck="false">{{ payload_json }}</textarea>
           <div class="toolbar" style="margin-top:12px"><button type="submit">保存并校验 JSON</button></div>
@@ -102,15 +104,16 @@
         <p><strong>已导入，只读</strong> · ProfileVersion #{{ candidate.imported_profile_version_id }}</p>
       {% elif candidate.status == "approved" %}
         <div class="toolbar">
-          <form action="/admin/candidates/{{ candidate.id }}/import" method="post"><button type="submit">导入为 DRAFT Profile</button></form>
-          <form action="/admin/candidates/{{ candidate.id }}/reopen" method="post"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button class="secondary" type="submit">撤回批准</button></form>
+          <form action="/admin/candidates/{{ candidate.id }}/import" method="post" onsubmit="return confirm('确定导入为 DRAFT Profile？')"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button type="submit">导入为 DRAFT Profile</button></form>
+          <form action="/admin/candidates/{{ candidate.id }}/reopen" method="post" onsubmit="return confirm('确定撤回批准？')"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button class="secondary" type="submit">撤回批准</button></form>
         </div>
       {% else %}
         <div class="toolbar">
-        <form action="/admin/candidates/{{ candidate.id }}/validate" method="post"><button class="secondary" type="submit">重新校验</button></form>
-        {% if candidate.status == "valid" %}<form action="/admin/candidates/{{ candidate.id }}/approve" method="post"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button type="submit">批准</button></form>{% endif %}
+        <form action="/admin/candidates/{{ candidate.id }}/validate" method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">重新校验</button></form>
+        {% if candidate.status == "valid" %}<form action="/admin/candidates/{{ candidate.id }}/approve" method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button type="submit">批准</button></form>{% endif %}
         </div>
-        <form action="/admin/candidates/{{ candidate.id }}/reject" method="post" style="margin-top:14px">
+        <form action="/admin/candidates/{{ candidate.id }}/reject" method="post" style="margin-top:14px" onsubmit="return confirm('确定拒绝这个 Candidate？')">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="revision" value="{{ candidate.revision }}">
           <div class="toolbar"><input type="text" name="note" placeholder="拒绝原因" required><button class="danger" type="submit">拒绝</button></div>
         </form>

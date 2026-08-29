@@ -18,10 +18,21 @@ from tests.document.test_extraction_pipeline import candidate_payload
 async def _admin_client(monkeypatch):
     monkeypatch.setenv("DEVICE_ADMIN_USERNAME", "reviewer")
     monkeypatch.setenv("DEVICE_ADMIN_PASSWORD", "review-secret")
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()),
+        base_url="http://test",
+        auth=("reviewer", "review-secret"),
+    ) as bootstrap_client:
+        response = await bootstrap_client.get("/admin/documents")
+        assert response.status_code == 200
+        csrf_token = bootstrap_client.cookies.get("admin_csrf")
+    assert csrf_token
     return AsyncClient(
         transport=ASGITransport(app=create_app()),
         base_url="http://test",
         auth=("reviewer", "review-secret"),
+        cookies={"admin_csrf": csrf_token},
+        headers={"x-csrf-token": csrf_token},
     )
 
 
@@ -33,6 +44,43 @@ async def test_admin_console_requires_credentials(client, monkeypatch):
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Basic"
+
+
+async def test_admin_post_requires_signed_csrf_cookie_and_submitted_token(monkeypatch):
+    monkeypatch.setenv("DEVICE_ADMIN_USERNAME", "reviewer")
+    monkeypatch.setenv("DEVICE_ADMIN_PASSWORD", "review-secret")
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()),
+        base_url="http://test",
+        auth=("reviewer", "review-secret"),
+    ) as client:
+        response = await client.post("/admin/documents/1/extract")
+
+    assert response.status_code == 403
+
+
+async def test_admin_forms_render_csrf_token(db_session, monkeypatch):
+    candidate = await make_candidate(db_session)
+    await db_session.commit()
+
+    monkeypatch.setenv("DEVICE_ADMIN_USERNAME", "reviewer")
+    monkeypatch.setenv("DEVICE_ADMIN_PASSWORD", "review-secret")
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()),
+        base_url="http://test",
+        auth=("reviewer", "review-secret"),
+    ) as client:
+        documents = await client.get("/admin/documents")
+        review = await client.get(f"/admin/candidates/{candidate.id}")
+
+    assert 'name="_csrf_token"' in documents.text
+    assert 'name="_csrf_token"' in review.text
+    assert "HttpOnly" in documents.headers["set-cookie"]
+    assert "SameSite=strict" in documents.headers["set-cookie"]
+    assert documents.headers["cache-control"] == "no-store"
+    assert documents.headers["x-content-type-options"] == "nosniff"
+    assert documents.headers["x-frame-options"] == "SAMEORIGIN"
+    assert documents.headers["referrer-policy"] == "same-origin"
 
 
 async def test_admin_document_list_renders_existing_review_item(
@@ -287,6 +335,8 @@ async def test_approved_candidate_can_be_reopened_from_console(
     assert approved.status_code == 303
     assert "导入为 DRAFT Profile" in approved_page.text
     assert "撤回批准" in approved_page.text
+    assert "确定导入" in approved_page.text
+    assert "确定撤回" in approved_page.text
     assert f'/admin/candidates/{candidate.id}/save-fields' not in approved_page.text
     assert reopened.status_code == 303
     refreshed = await db_session.get(ProfileExtractionCandidate, candidate.id)
@@ -310,12 +360,14 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.commit()
 
     async with await _admin_client(monkeypatch) as client:
+        page = await client.get(f"/admin/candidates/{candidate.id}")
         response = await client.post(
             f"/admin/candidates/{candidate.id}/reject",
             data={"revision": "1", "note": "wrong device model"},
         )
 
     assert response.status_code == 303
+    assert "确定拒绝" in page.text
     refreshed = await db_session.get(ProfileExtractionCandidate, candidate.id)
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"

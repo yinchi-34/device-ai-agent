@@ -105,6 +105,24 @@ settings; it is not loaded automatically by Compose. Docker Compose binds the
 API and database ports to `127.0.0.1` by default. Tests use deterministic
 fakes and do not make live provider calls.
 
+### Admin Review Console
+
+Configure `DEVICE_ADMIN_USERNAME` and a strong `DEVICE_ADMIN_PASSWORD`, then
+open `http://127.0.0.1:8000/admin/documents`. The server-rendered internal
+console supports the complete review gate:
+
+- filter and page the document review queue, including extraction failures;
+- compare structured Candidate fields with AI originals and cited evidence;
+- jump from a field to its source block and PDF page;
+- edit allowlisted fields with revision conflict checks and revalidation;
+- approve, reject, reopen, and import only to a DRAFT Profile;
+- inspect the immutable reviewer/action/revision audit timeline.
+
+The console uses HTTP Basic authentication plus signed CSRF tokens. Keep it on
+localhost, a VPN, or a trusted internal reverse proxy; it is not intended to be
+published directly to the internet. Imported profiles remain drafts and still
+require the normal release workflow.
+
 ## Phase 3 read-only diagnosis agent
 
 Phase 3 adds a bounded model/tool/observation loop with a persistent audit

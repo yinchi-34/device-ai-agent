@@ -12,6 +12,16 @@ from app.modules.testing.router import router as testing_router
 def create_app() -> FastAPI:
     app = FastAPI(title="Device AI Agent Control API")
 
+    @app.middleware("http")
+    async def add_admin_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/admin" or request.url.path.startswith("/admin/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+            response.headers["Referrer-Policy"] = "same-origin"
+        return response
+
     @app.exception_handler(DomainError)
     async def domain_error_handler(
         request: Request, exc: DomainError

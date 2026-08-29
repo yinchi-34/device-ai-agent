@@ -4,6 +4,7 @@
 <section class="card">
   <h2>上传设备手册</h2>
   <form class="toolbar" action="/admin/documents" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
     <input name="file" type="file" accept=".pdf,.docx" required style="max-width:520px">
     <button type="submit">上传</button>
   </form>

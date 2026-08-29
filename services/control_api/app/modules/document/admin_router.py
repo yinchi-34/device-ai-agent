@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import secrets
 from math import ceil
@@ -15,7 +17,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -51,6 +53,8 @@ from app.modules.document.storage import FileSystemDocumentStorage
 
 security = HTTPBasic(auto_error=False)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+_CSRF_COOKIE = "admin_csrf"
+_CSRF_HEADER = "x-csrf-token"
 
 
 def require_admin(
@@ -78,10 +82,71 @@ def require_admin(
     return settings.admin_username
 
 
+def _sign_csrf_nonce(nonce: str, secret: str) -> str:
+    return hmac.new(secret.encode(), nonce.encode(), hashlib.sha256).hexdigest()
+
+
+def _new_csrf_token(secret: str) -> str:
+    nonce = secrets.token_urlsafe(32)
+    return f"{nonce}.{_sign_csrf_nonce(nonce, secret)}"
+
+
+def _valid_csrf_token(token: str | None, secret: str) -> bool:
+    if token is None or len(token) > 256:
+        return False
+    nonce, separator, signature = token.partition(".")
+    if not separator or not nonce or not signature:
+        return False
+    expected = _sign_csrf_nonce(nonce, secret)
+    return secrets.compare_digest(signature, expected)
+
+
+async def require_admin_csrf(request: Request) -> None:
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    secret = Settings().admin_password
+    cookie_token = request.cookies.get(_CSRF_COOKIE)
+    submitted_token = request.headers.get(_CSRF_HEADER)
+    if submitted_token is None:
+        form = await request.form()
+        raw_token = form.get("_csrf_token")
+        submitted_token = raw_token if isinstance(raw_token, str) else None
+    if (
+        not _valid_csrf_token(cookie_token, secret)
+        or submitted_token is None
+        or not secrets.compare_digest(cookie_token, submitted_token)
+    ):
+        raise HTTPException(status_code=403, detail="Invalid admin CSRF token")
+
+
+def _render_admin_template(
+    request: Request, name: str, context: dict[str, Any]
+) -> Response:
+    secret = Settings().admin_password
+    cookie_token = request.cookies.get(_CSRF_COOKIE)
+    token = cookie_token if _valid_csrf_token(cookie_token, secret) else _new_csrf_token(secret)
+    response = templates.TemplateResponse(
+        request=request,
+        name=name,
+        context={**context, "csrf_token": token},
+    )
+    if token != cookie_token:
+        response.set_cookie(
+            _CSRF_COOKIE,
+            token,
+            max_age=8 * 60 * 60,
+            httponly=True,
+            secure=request.url.scheme == "https",
+            samesite="strict",
+            path="/admin",
+        )
+    return response
+
+
 router = APIRouter(
     prefix="/admin",
     tags=["admin-review"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin), Depends(require_admin_csrf)],
     include_in_schema=False,
 )
 
@@ -177,10 +242,10 @@ async def document_list(
     total_pages = max(1, ceil(total_rows / page_size))
     page = min(page, total_pages)
     page_rows = rows[(page - 1) * page_size : page * page_size]
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/documents.html",
-        context={
+    return _render_admin_template(
+        request,
+        "admin/documents.html",
+        {
             "rows": page_rows,
             "message": request.query_params.get("message"),
             "queue_filters": REVIEW_QUEUE_FILTERS,
@@ -232,10 +297,10 @@ async def document_detail(
     if document is None:
         raise DomainError("not_found", f"SourceDocument {document_id} not found", 404)
     runs = sorted(document.extraction_runs, key=lambda run: run.id, reverse=True)
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/document_detail.html",
-        context={
+    return _render_admin_template(
+        request,
+        "admin/document_detail.html",
+        {
             "document": document,
             "runs": runs,
             "message": request.query_params.get("message"),
@@ -302,10 +367,10 @@ async def candidate_review(
             )
         ).all()
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/candidate_review.html",
-        context={
+    return _render_admin_template(
+        request,
+        "admin/candidate_review.html",
+        {
             "candidate": candidate,
             "document": candidate.extraction_run.source_document,
             "payload_json": json.dumps(
