@@ -21,7 +21,7 @@
     button,.button { border:0; border-radius:8px; background:var(--brand); color:#fff; padding:9px 14px; cursor:pointer; text-decoration:none; display:inline-block; }
     button.secondary,.button.secondary { background:#475569; }
     button.danger { background:#b91c1c; }
-    input[type=file],input[type=text],textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; background:#fff; }
+    input[type=file],input[type=text],input[type=number],select,textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; background:#fff; }
     textarea { min-height:620px; resize:vertical; font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; }
     .status { display:inline-block; border-radius:999px; background:#e8eef8; padding:3px 9px; font-size:12px; }
     .muted { color:var(--muted); }
@@ -37,6 +37,8 @@
     .review-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
     .review-field { border-left:3px solid #cbd5e1; background:#f8fafc; padding:9px 10px; min-width:0; }
     .review-field.changed { border-left-color:#d97706; background:#fffbeb; }
+    .review-field input,.review-field select,.review-field textarea { margin-top:5px; }
+    .review-field textarea { min-height:90px; }
     .review-value { font-weight:650; overflow-wrap:anywhere; white-space:pre-wrap; }
     .review-meta { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
     .changed-badge { color:#92400e; font-size:12px; font-weight:700; }

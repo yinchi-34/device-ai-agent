@@ -15,6 +15,7 @@ class ReviewField:
     changed: bool
     confidence: float | None
     evidence_refs: tuple[str, ...]
+    input_kind: str
 
 
 @dataclass(frozen=True)
@@ -140,6 +141,26 @@ def _field(
     path = f"{base_path}/{key}"
     if is_sourced:
         path += "/value"
+    if is_sourced:
+        input_kind = "text"
+    elif key in {"config_schema", "address_spec", "value_schema", "expected_rule"}:
+        input_kind = "json"
+    elif key == "is_required" or isinstance(current_raw, bool):
+        input_kind = "boolean"
+    elif key == "existing_device_model_id" or isinstance(current_raw, int):
+        input_kind = "integer"
+    elif key in {
+        "candidate_ref",
+        "protocol_ref",
+        "capability_code",
+        "capability_ref",
+        "point_ref",
+        "role",
+        "alias",
+    }:
+        input_kind = "text"
+    else:
+        input_kind = "readonly"
     return ReviewField(
         key=key,
         label=label,
@@ -151,6 +172,7 @@ def _field(
         changed=current_raw != original_raw,
         confidence=float(confidence) if confidence is not None else None,
         evidence_refs=refs,
+        input_kind=input_kind,
     )
 
 

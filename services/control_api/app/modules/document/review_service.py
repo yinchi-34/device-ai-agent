@@ -9,6 +9,10 @@ from app.modules.device import repository as device_repository
 from app.modules.device.models import DeviceModel, DeviceProfileVersion
 from app.modules.device.service import DeviceService
 from app.modules.document import candidate_validation
+from app.modules.document.candidate_editing import (
+    CandidateFieldEditError,
+    apply_candidate_field_changes,
+)
 from app.modules.document.enums import CandidateStatus, ExtractionRunStatus
 from app.modules.document.models import (
     DocumentChunk,
@@ -84,6 +88,39 @@ class DocumentReviewService:
             raise DomainError(
                 "candidate_already_imported", "Imported candidates are immutable", 409
             )
+        return await self._replace_candidate_payload(candidate, payload)
+
+    async def update_candidate_fields(
+        self,
+        candidate_id: int,
+        *,
+        revision: int,
+        changes: dict[str, str],
+    ) -> ProfileExtractionCandidate:
+        candidate = await self._candidate_for_update(candidate_id)
+        if candidate.revision != revision:
+            raise DomainError(
+                "candidate_revision_conflict",
+                "Candidate was modified by another reviewer",
+                409,
+            )
+        if candidate.status == CandidateStatus.IMPORTED.value:
+            raise DomainError(
+                "candidate_already_imported", "Imported candidates are immutable", 409
+            )
+        try:
+            payload = apply_candidate_field_changes(
+                candidate.reviewed_payload, changes
+            )
+        except CandidateFieldEditError as exc:
+            raise DomainError(exc.code, str(exc), 422) from None
+        return await self._replace_candidate_payload(candidate, payload)
+
+    async def _replace_candidate_payload(
+        self,
+        candidate: ProfileExtractionCandidate,
+        payload: dict[str, Any],
+    ) -> ProfileExtractionCandidate:
         candidate.reviewed_payload = payload
         candidate.revision += 1
         candidate.review_note = None

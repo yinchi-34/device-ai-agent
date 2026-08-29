@@ -334,6 +334,33 @@ async def save_candidate(
     return RedirectResponse(_candidate_url(candidate_id, "saved"), status_code=303)
 
 
+@router.post("/candidates/{candidate_id}/save-fields")
+async def save_candidate_fields(
+    request: Request,
+    candidate_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> RedirectResponse:
+    form = await request.form()
+    try:
+        revision = int(str(form.get("revision", "")))
+    except ValueError:
+        raise DomainError("candidate_revision_invalid", "Invalid revision", 422) from None
+    changes = {
+        key.removeprefix("field:"): str(value)
+        for key, value in form.multi_items()
+        if key.startswith("field:")
+    }
+    if not changes:
+        raise DomainError(
+            "candidate_fields_missing", "No candidate fields were submitted", 422
+        )
+    await DocumentService(session).update_candidate_fields(
+        candidate_id, revision=revision, changes=changes
+    )
+    await session.commit()
+    return RedirectResponse(_candidate_url(candidate_id, "saved"), status_code=303)
+
+
 @router.post("/candidates/{candidate_id}/validate")
 async def validate_candidate(
     candidate_id: int, session: AsyncSession = Depends(get_db_session)

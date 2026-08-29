@@ -78,6 +78,27 @@ async def test_candidate_patch_rejects_stale_revision(db_session):
     assert excinfo.value.code == "candidate_revision_conflict"
 
 
+async def test_candidate_field_patch_uses_same_revision_lock(db_session):
+    candidate = await make_candidate(db_session)
+    service = DocumentService(db_session)
+
+    updated = await service.update_candidate_fields(
+        candidate.id,
+        revision=1,
+        changes={"/profile/version/value": "2.0-fields"},
+    )
+    with pytest.raises(DomainError) as excinfo:
+        await service.update_candidate_fields(
+            candidate.id,
+            revision=1,
+            changes={"/profile/version/value": "stale"},
+        )
+
+    assert updated.reviewed_payload["profile"]["version"]["value"] == "2.0-fields"
+    assert updated.revision == 2
+    assert excinfo.value.code == "candidate_revision_conflict"
+
+
 async def test_approval_requires_valid_candidate(db_session):
     candidate = await make_candidate(db_session, status="invalid")
 

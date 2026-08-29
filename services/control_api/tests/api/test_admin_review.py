@@ -175,6 +175,36 @@ async def test_candidate_review_renders_structured_sections_and_change_diff(
     assert "高级 JSON 编辑" in response.text
 
 
+async def test_candidate_structured_fields_can_be_saved_and_validated(
+    db_session, monkeypatch
+):
+    candidate = await make_candidate(db_session)
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        page = await client.get(f"/admin/candidates/{candidate.id}")
+        saved = await client.post(
+            f"/admin/candidates/{candidate.id}/save-fields",
+            data={
+                "revision": "1",
+                "field:/profile/version/value": "2.0-fields",
+                "field:/protocols/0/config_schema": '{"type":"object"}',
+            },
+        )
+
+    assert page.status_code == 200
+    assert 'name="field:/profile/version/value"' in page.text
+    assert saved.status_code == 303
+    refreshed = await db_session.get(ProfileExtractionCandidate, candidate.id)
+    await db_session.refresh(refreshed)
+    assert refreshed.revision == 2
+    assert refreshed.status == "valid"
+    assert refreshed.reviewed_payload["profile"]["version"]["value"] == "2.0-fields"
+    assert refreshed.reviewed_payload["protocols"][0]["config_schema"] == {
+        "type": "object"
+    }
+
+
 async def test_candidate_json_can_be_saved_with_revision_check(
     db_session, monkeypatch
 ):
