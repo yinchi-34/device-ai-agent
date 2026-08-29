@@ -3,7 +3,11 @@ import json
 from httpx import ASGITransport, AsyncClient
 
 from app.main import create_app
-from app.modules.document.models import ProfileExtractionCandidate
+from app.modules.document.models import (
+    ProfileExtractionCandidate,
+    ProfileExtractionRun,
+    SourceDocument,
+)
 from tests.document.test_candidate_review import make_candidate
 from tests.document.test_extraction_pipeline import candidate_payload
 
@@ -41,6 +45,70 @@ async def test_admin_document_list_renders_existing_review_item(
     assert "manual.docx" in response.text
     assert "awaiting_review" in response.text
     assert "valid" in response.text
+
+
+async def test_admin_document_list_filters_failed_runs_and_shows_error(
+    db_session, monkeypatch
+):
+    await make_candidate(db_session)
+    failed_document = SourceDocument(
+        original_file_name="broken-manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="c" * 64,
+        storage_uri="original/broken-manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(failed_document)
+    await db_session.flush()
+    db_session.add(
+        ProfileExtractionRun(
+            source_document_id=failed_document.id,
+            status="failed",
+            extraction_provider="fake",
+            extraction_model="extract-v1",
+            embedding_provider="fake",
+            embedding_model="embed-v1",
+            error_code="provider_timeout",
+            error_detail={"message": "model timed out"},
+        )
+    )
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        response = await client.get("/admin/documents?status=failed")
+
+    assert response.status_code == 200
+    assert "broken-manual.pdf" in response.text
+    assert "provider_timeout" in response.text
+    assert "model timed out" in response.text
+    assert "manual.docx" not in response.text
+
+
+async def test_admin_document_list_paginates_results(db_session, monkeypatch):
+    for index in range(21):
+        db_session.add(
+            SourceDocument(
+                original_file_name=f"manual-{index:02}.pdf",
+                media_type="application/pdf",
+                file_size_bytes=10,
+                file_hash_sha256=f"{index:064x}",
+                storage_uri=f"original/manual-{index:02}.pdf",
+                validation_status="validated",
+            )
+        )
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        first_page = await client.get("/admin/documents?page=1")
+        second_page = await client.get("/admin/documents?page=2")
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert "manual-20.pdf" in first_page.text
+    assert "manual-00.pdf" not in first_page.text
+    assert "manual-00.pdf" in second_page.text
+    assert "第 2 / 2 页" in second_page.text
 
 
 async def test_candidate_review_shows_payload_and_traceable_evidence(

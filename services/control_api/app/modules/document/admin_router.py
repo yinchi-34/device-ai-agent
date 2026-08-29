@@ -1,5 +1,6 @@
 import json
 import secrets
+from math import ceil
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     status,
@@ -23,6 +25,13 @@ from sqlalchemy.orm import selectinload
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.db.session import get_db_session
+from app.modules.document.admin_review import (
+    REVIEW_QUEUE_FILTERS,
+    REVIEW_QUEUE_LABELS,
+    ReviewQueueStatus,
+    derive_review_queue_status,
+    review_queue_priority,
+)
 from app.modules.document.application_service import (
     DocumentApplicationService,
     map_validation_error,
@@ -118,7 +127,10 @@ async def admin_home() -> RedirectResponse:
 
 @router.get("/documents")
 async def document_list(
-    request: Request, session: AsyncSession = Depends(get_db_session)
+    request: Request,
+    queue_status: ReviewQueueStatus | None = Query(default=None, alias="status"),
+    page: int = Query(default=1, ge=1),
+    session: AsyncSession = Depends(get_db_session),
 ):
     documents = (
         await session.scalars(
@@ -135,17 +147,46 @@ async def document_list(
     rows = []
     for document in documents:
         latest_run = max(document.extraction_runs, key=lambda run: run.id, default=None)
+        candidate = latest_run.candidate if latest_run else None
+        aggregate_status = derive_review_queue_status(
+            document.validation_status,
+            latest_run.status if latest_run else None,
+            candidate.status if candidate else None,
+        )
         rows.append(
             {
                 "document": document,
                 "run": latest_run,
-                "candidate": latest_run.candidate if latest_run else None,
+                "candidate": candidate,
+                "queue_status": aggregate_status,
+                "queue_status_label": REVIEW_QUEUE_LABELS[aggregate_status],
+                "error_message": (
+                    latest_run.error_detail.get("message")
+                    if latest_run and isinstance(latest_run.error_detail, dict)
+                    else None
+                ),
             }
         )
+    rows.sort(key=lambda row: review_queue_priority(row["queue_status"]))
+    if queue_status is not None:
+        rows = [row for row in rows if row["queue_status"] == queue_status]
+    page_size = 20
+    total_rows = len(rows)
+    total_pages = max(1, ceil(total_rows / page_size))
+    page = min(page, total_pages)
+    page_rows = rows[(page - 1) * page_size : page * page_size]
     return templates.TemplateResponse(
         request=request,
         name="admin/documents.html",
-        context={"rows": rows, "message": request.query_params.get("message")},
+        context={
+            "rows": page_rows,
+            "message": request.query_params.get("message"),
+            "queue_filters": REVIEW_QUEUE_FILTERS,
+            "selected_status": queue_status,
+            "page": page,
+            "total_pages": total_pages,
+            "total_rows": total_rows,
+        },
     )
 
 

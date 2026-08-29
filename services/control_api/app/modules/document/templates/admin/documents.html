@@ -10,22 +10,35 @@
   <p class="muted">支持 PDF / DOCX。上传后启动 AI 提取，完成后在这里审核证据和 JSON。</p>
 </section>
 <section class="card">
-  <h2>文档与最新提取状态</h2>
+  <div class="toolbar">
+    <h2 style="margin-right:auto">审核队列</h2>
+    <a class="button {% if selected_status %}secondary{% endif %}" href="/admin/documents">全部</a>
+    {% for value, label in queue_filters %}
+      <a class="button {% if selected_status != value %}secondary{% endif %}" href="/admin/documents?status={{ value }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <p class="muted">共 {{ total_rows }} 条；业务状态由文档、最新提取任务和 Candidate 状态聚合得出。</p>
   <table>
-    <thead><tr><th>文档</th><th>校验</th><th>提取任务</th><th>Candidate</th><th>操作</th></tr></thead>
+    <thead><tr><th>文档</th><th>业务状态</th><th>提取任务</th><th>Candidate</th><th>失败信息</th><th>操作</th></tr></thead>
     <tbody>
     {% for row in rows %}
       <tr>
-        <td><a href="/admin/documents/{{ row.document.id }}">{{ row.document.original_file_name }}</a><br><span class="muted">#{{ row.document.id }}</span></td>
-        <td><span class="status">{{ row.document.validation_status }}</span></td>
+        <td><a href="/admin/documents/{{ row.document.id }}">{{ row.document.original_file_name }}</a><br><span class="muted">#{{ row.document.id }} · {{ row.document.created_at }}</span></td>
+        <td><span class="status">{{ row.queue_status_label }}</span><br><span class="muted">{{ row.queue_status }}</span></td>
         <td>{% if row.run %}<span class="status">{{ row.run.status }}</span><br><span class="muted">run #{{ row.run.id }}</span>{% else %}—{% endif %}</td>
         <td>{% if row.candidate %}<span class="status">{{ row.candidate.status }}</span><br><span class="muted">rev {{ row.candidate.revision }}</span>{% else %}—{% endif %}</td>
+        <td>{% if row.run and row.run.error_code %}<span class="errors">{{ row.run.error_code }}</span>{% if row.error_message %}<br><span class="muted">{{ row.error_message }}</span>{% endif %}{% else %}—{% endif %}</td>
         <td>{% if row.candidate %}<a class="button" href="/admin/candidates/{{ row.candidate.id }}">开始审核</a>{% else %}<a class="button secondary" href="/admin/documents/{{ row.document.id }}">查看</a>{% endif %}</td>
       </tr>
     {% else %}
-      <tr><td colspan="5" class="muted">暂无文档。先上传一份真实设备手册。</td></tr>
+      <tr><td colspan="6" class="muted">当前筛选条件下没有文档。</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  <div class="toolbar" style="justify-content:flex-end;margin-top:14px">
+    {% if page > 1 %}<a href="/admin/documents?page={{ page - 1 }}{% if selected_status %}&status={{ selected_status }}{% endif %}">上一页</a>{% endif %}
+    <span class="muted">第 {{ page }} / {{ total_pages }} 页</span>
+    {% if page < total_pages %}<a href="/admin/documents?page={{ page + 1 }}{% if selected_status %}&status={{ selected_status }}{% endif %}">下一页</a>{% endif %}
+  </div>
 </section>
 {% endblock %}
