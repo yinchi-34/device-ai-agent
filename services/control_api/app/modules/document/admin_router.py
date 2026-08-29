@@ -39,6 +39,7 @@ from app.modules.document.application_service import (
 from app.modules.document.candidate_presenter import present_candidate
 from app.modules.document.file_validation import DocumentValidationError
 from app.modules.document.models import (
+    CandidateReviewEvent,
     DocumentChunk,
     ProfileExtractionCandidate,
     ProfileExtractionRun,
@@ -289,6 +290,18 @@ async def candidate_review(
     referenced = _evidence_refs(candidate.reviewed_payload)
     evidence = [chunk for chunk in chunks if chunk.stable_ref in referenced]
     missing_refs = sorted(referenced - {chunk.stable_ref for chunk in chunks})
+    review_events = list(
+        (
+            await session.scalars(
+                select(CandidateReviewEvent)
+                .where(CandidateReviewEvent.candidate_id == candidate.id)
+                .order_by(
+                    CandidateReviewEvent.created_at.desc(),
+                    CandidateReviewEvent.id.desc(),
+                )
+            )
+        ).all()
+    )
     return templates.TemplateResponse(
         request=request,
         name="admin/candidate_review.html",
@@ -307,6 +320,7 @@ async def candidate_review(
             "evidence": evidence,
             "evidence_by_ref": {chunk.stable_ref: chunk for chunk in chunks},
             "missing_refs": missing_refs,
+            "review_events": review_events,
             "message": request.query_params.get("message"),
         },
     )
@@ -317,6 +331,7 @@ async def save_candidate(
     candidate_id: int,
     revision: int = Form(...),
     payload_json: str = Form(...),
+    actor: str = Depends(require_admin),
     session: AsyncSession = Depends(get_db_session),
 ) -> RedirectResponse:
     try:
@@ -328,7 +343,7 @@ async def save_candidate(
     if not isinstance(payload, dict):
         raise DomainError("candidate_json_invalid", "Candidate must be an object", 422)
     await DocumentService(session).update_candidate(
-        candidate_id, revision=revision, payload=payload
+        candidate_id, revision=revision, payload=payload, actor=actor
     )
     await session.commit()
     return RedirectResponse(_candidate_url(candidate_id, "saved"), status_code=303)
@@ -338,6 +353,7 @@ async def save_candidate(
 async def save_candidate_fields(
     request: Request,
     candidate_id: int,
+    actor: str = Depends(require_admin),
     session: AsyncSession = Depends(get_db_session),
 ) -> RedirectResponse:
     form = await request.form()
@@ -355,7 +371,7 @@ async def save_candidate_fields(
             "candidate_fields_missing", "No candidate fields were submitted", 422
         )
     await DocumentService(session).update_candidate_fields(
-        candidate_id, revision=revision, changes=changes
+        candidate_id, revision=revision, changes=changes, actor=actor
     )
     await session.commit()
     return RedirectResponse(_candidate_url(candidate_id, "saved"), status_code=303)
@@ -374,9 +390,12 @@ async def validate_candidate(
 async def approve_candidate(
     candidate_id: int,
     revision: int = Form(...),
+    actor: str = Depends(require_admin),
     session: AsyncSession = Depends(get_db_session),
 ) -> RedirectResponse:
-    await DocumentService(session).approve_candidate(candidate_id, revision=revision)
+    await DocumentService(session).approve_candidate(
+        candidate_id, revision=revision, actor=actor
+    )
     await session.commit()
     return RedirectResponse(_candidate_url(candidate_id, "approved"), status_code=303)
 
@@ -386,10 +405,11 @@ async def reject_candidate(
     candidate_id: int,
     revision: int = Form(...),
     note: str = Form(default=""),
+    actor: str = Depends(require_admin),
     session: AsyncSession = Depends(get_db_session),
 ) -> RedirectResponse:
     await DocumentService(session).reject_candidate(
-        candidate_id, revision=revision, note=note
+        candidate_id, revision=revision, note=note, actor=actor
     )
     await session.commit()
     return RedirectResponse(_candidate_url(candidate_id, "rejected"), status_code=303)
@@ -397,8 +417,24 @@ async def reject_candidate(
 
 @router.post("/candidates/{candidate_id}/import")
 async def import_candidate(
-    candidate_id: int, session: AsyncSession = Depends(get_db_session)
+    candidate_id: int,
+    actor: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db_session),
 ) -> RedirectResponse:
-    await DocumentService(session).import_candidate(candidate_id)
+    await DocumentService(session).import_candidate(candidate_id, actor=actor)
     await session.commit()
     return RedirectResponse(_candidate_url(candidate_id, "imported"), status_code=303)
+
+
+@router.post("/candidates/{candidate_id}/reopen")
+async def reopen_candidate(
+    candidate_id: int,
+    revision: int = Form(...),
+    actor: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db_session),
+) -> RedirectResponse:
+    await DocumentService(session).reopen_candidate(
+        candidate_id, revision=revision, actor=actor
+    )
+    await session.commit()
+    return RedirectResponse(_candidate_url(candidate_id, "reopened"), status_code=303)

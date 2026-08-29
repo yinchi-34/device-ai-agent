@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.main import create_app
 from app.modules.document.models import (
+    CandidateReviewEvent,
     DocumentChunk,
     ProfileExtractionCandidate,
     ProfileExtractionRun,
@@ -243,6 +244,7 @@ async def test_candidate_can_be_approved_then_imported_from_console(
             data={"revision": "1"},
         )
         imported = await client.post(f"/admin/candidates/{candidate.id}/import")
+        imported_page = await client.get(f"/admin/candidates/{candidate.id}")
 
     assert approved.status_code == 303
     assert imported.status_code == 303
@@ -250,6 +252,55 @@ async def test_candidate_can_be_approved_then_imported_from_console(
     await db_session.refresh(refreshed)
     assert refreshed.status == "imported"
     assert refreshed.imported_profile_version_id is not None
+    events = list(
+        (
+            await db_session.scalars(
+                select(CandidateReviewEvent).order_by(CandidateReviewEvent.id)
+            )
+        ).all()
+    )
+    assert [event.action for event in events] == ["approved", "imported"]
+    assert {event.actor for event in events} == {"reviewer"}
+    assert "审核记录" in imported_page.text
+    assert "reviewer" in imported_page.text
+    assert "已导入，只读" in imported_page.text
+    assert f'/admin/candidates/{candidate.id}/save-fields' not in imported_page.text
+
+
+async def test_approved_candidate_can_be_reopened_from_console(
+    db_session, monkeypatch
+):
+    candidate = await make_candidate(db_session)
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        approved = await client.post(
+            f"/admin/candidates/{candidate.id}/approve",
+            data={"revision": "1"},
+        )
+        approved_page = await client.get(f"/admin/candidates/{candidate.id}")
+        reopened = await client.post(
+            f"/admin/candidates/{candidate.id}/reopen",
+            data={"revision": "1"},
+        )
+
+    assert approved.status_code == 303
+    assert "导入为 DRAFT Profile" in approved_page.text
+    assert "撤回批准" in approved_page.text
+    assert f'/admin/candidates/{candidate.id}/save-fields' not in approved_page.text
+    assert reopened.status_code == 303
+    refreshed = await db_session.get(ProfileExtractionCandidate, candidate.id)
+    await db_session.refresh(refreshed)
+    assert refreshed.status == "valid"
+    events = list(
+        (
+            await db_session.scalars(
+                select(CandidateReviewEvent).order_by(CandidateReviewEvent.id)
+            )
+        ).all()
+    )
+    assert [event.action for event in events] == ["approved", "reopened"]
+    assert {event.actor for event in events} == {"reviewer"}
 
 
 async def test_candidate_can_be_rejected_with_review_note(

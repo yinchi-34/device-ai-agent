@@ -28,6 +28,14 @@ class CandidateStatus(StrEnum):
     IMPORTED = "imported"
 
 
+class ReviewAction(StrEnum):
+    SAVED = "saved"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REOPENED = "reopened"
+    IMPORTED = "imported"
+
+
 class ChunkContentType(StrEnum):
     TEXT = "text"
     HEADING = "heading"

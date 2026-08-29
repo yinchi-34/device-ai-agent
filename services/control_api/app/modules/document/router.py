@@ -120,7 +120,7 @@ async def update_candidate(
     session: AsyncSession = Depends(get_db_session),
 ) -> object:
     candidate = await DocumentService(session).update_candidate(
-        candidate_id, revision=payload.revision, payload=payload.payload
+        candidate_id, revision=payload.revision, payload=payload.payload, actor="api"
     )
     await session.commit()
     await session.refresh(candidate)
@@ -150,7 +150,7 @@ async def approve_candidate(
     session: AsyncSession = Depends(get_db_session),
 ) -> object:
     candidate = await DocumentService(session).approve_candidate(
-        candidate_id, revision=payload.revision
+        candidate_id, revision=payload.revision, actor="api"
     )
     await session.commit()
     await session.refresh(candidate)
@@ -170,6 +170,7 @@ async def reject_candidate(
         candidate_id,
         revision=payload.revision,
         note=payload.note or "",
+        actor="api",
     )
     await session.commit()
     await session.refresh(candidate)
@@ -188,7 +189,7 @@ async def import_candidate(
 ) -> object:
     candidate = await DocumentService(session)._candidate_for_update(candidate_id)
     already_imported = candidate.imported_profile_version_id is not None
-    profile = await DocumentService(session).import_candidate(candidate_id)
+    profile = await DocumentService(session).import_candidate(candidate_id, actor="api")
     await session.commit()
     response.status_code = 200 if already_imported else 201
     return {"profile_version_id": profile.id}

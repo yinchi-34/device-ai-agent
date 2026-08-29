@@ -28,10 +28,13 @@
     </section>
   </div>
   <div>
+    {% set candidate_editable = candidate.status not in ["approved", "imported"] %}
     <section class="card">
       <h2>AI 结构化结果</h2>
+      {% if candidate_editable %}
       <form action="/admin/candidates/{{ candidate.id }}/save-fields" method="post">
       <input type="hidden" name="revision" value="{{ candidate.revision }}">
+      {% endif %}
       {% for section in review_sections %}
         <section class="review-section" id="section-{{ section.key }}">
           <h3>{{ section.label }}</h3>
@@ -42,13 +45,13 @@
                 {% for field in item.fields %}
                   <div class="review-field{% if field.changed %} changed{% endif %}" data-review-path="{{ field.path }}">
                     <div class="review-meta">{{ field.label }}</div>
-                    {% if field.input_kind == "text" %}
+                    {% if candidate_editable and field.input_kind == "text" %}
                       <input type="text" name="field:{{ field.path }}" value="{{ field.value if field.value is not none else '' }}">
-                    {% elif field.input_kind == "integer" %}
+                    {% elif candidate_editable and field.input_kind == "integer" %}
                       <input type="number" name="field:{{ field.path }}" value="{{ field.value if field.value is not none else '' }}">
-                    {% elif field.input_kind == "boolean" %}
+                    {% elif candidate_editable and field.input_kind == "boolean" %}
                       <select name="field:{{ field.path }}"><option value="true"{% if field.value %} selected{% endif %}>是</option><option value="false"{% if not field.value %} selected{% endif %}>否</option></select>
-                    {% elif field.input_kind == "json" %}
+                    {% elif candidate_editable and field.input_kind == "json" %}
                       <textarea name="field:{{ field.path }}" spellcheck="false">{{ field.display_value }}</textarea>
                     {% else %}
                       <div class="review-value">{{ field.display_value }}</div>
@@ -71,8 +74,9 @@
           {% else %}<p class="muted">{{ section.empty_message }}</p>{% endfor %}
         </section>
       {% endfor %}
-      <div class="toolbar" style="margin-top:14px"><button type="submit">保存字段并校验</button></div>
+      {% if candidate_editable %}<div class="toolbar" style="margin-top:14px"><button type="submit">保存字段并校验</button></div>
       </form>
+      {% endif %}
       {% if unresolved_suggestions %}
         <section class="review-section">
           <h3>未解决建议</h3>
@@ -82,7 +86,7 @@
       {% if candidate.schema_errors %}<h3>Schema 错误</h3><div class="errors">{{ candidate.schema_errors }}</div>{% endif %}
       {% if candidate.domain_errors %}<h3>领域错误</h3><div class="errors">{{ candidate.domain_errors }}</div>{% endif %}
     </section>
-    <section class="card">
+    {% if candidate_editable %}<section class="card">
       <details>
         <summary>高级 JSON 编辑</summary>
         <form action="/admin/candidates/{{ candidate.id }}/save" method="post">
@@ -91,20 +95,33 @@
           <div class="toolbar" style="margin-top:12px"><button type="submit">保存并校验 JSON</button></div>
         </form>
       </details>
-    </section>
+    </section>{% endif %}
     <section class="card">
       <h2>审核动作</h2>
-      <div class="toolbar">
+      {% if candidate.status == "imported" %}
+        <p><strong>已导入，只读</strong> · ProfileVersion #{{ candidate.imported_profile_version_id }}</p>
+      {% elif candidate.status == "approved" %}
+        <div class="toolbar">
+          <form action="/admin/candidates/{{ candidate.id }}/import" method="post"><button type="submit">导入为 DRAFT Profile</button></form>
+          <form action="/admin/candidates/{{ candidate.id }}/reopen" method="post"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button class="secondary" type="submit">撤回批准</button></form>
+        </div>
+      {% else %}
+        <div class="toolbar">
         <form action="/admin/candidates/{{ candidate.id }}/validate" method="post"><button class="secondary" type="submit">重新校验</button></form>
-        <form action="/admin/candidates/{{ candidate.id }}/approve" method="post"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button type="submit">批准</button></form>
-        <form action="/admin/candidates/{{ candidate.id }}/import" method="post"><button type="submit">导入数据库</button></form>
-      </div>
-      <form action="/admin/candidates/{{ candidate.id }}/reject" method="post" style="margin-top:14px">
-        <input type="hidden" name="revision" value="{{ candidate.revision }}">
-        <div class="toolbar"><input type="text" name="note" placeholder="拒绝原因" required><button class="danger" type="submit">拒绝</button></div>
-      </form>
+        {% if candidate.status == "valid" %}<form action="/admin/candidates/{{ candidate.id }}/approve" method="post"><input type="hidden" name="revision" value="{{ candidate.revision }}"><button type="submit">批准</button></form>{% endif %}
+        </div>
+        <form action="/admin/candidates/{{ candidate.id }}/reject" method="post" style="margin-top:14px">
+          <input type="hidden" name="revision" value="{{ candidate.revision }}">
+          <div class="toolbar"><input type="text" name="note" placeholder="拒绝原因" required><button class="danger" type="submit">拒绝</button></div>
+        </form>
+      {% endif %}
       {% if candidate.review_note %}<p>审核备注：{{ candidate.review_note }}</p>{% endif %}
-      {% if candidate.imported_profile_version_id %}<p>已导入 ProfileVersion #{{ candidate.imported_profile_version_id }}</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>审核记录</h2>
+      {% for event in review_events %}
+        <article class="evidence"><strong>{{ event.actor }} · {{ event.action }}</strong><div class="muted">revision {{ event.revision }} · {{ event.created_at }}</div>{% if event.note %}<p>{{ event.note }}</p>{% endif %}</article>
+      {% else %}<p class="muted">尚无人工审核记录。</p>{% endfor %}
     </section>
   </div>
 </div>

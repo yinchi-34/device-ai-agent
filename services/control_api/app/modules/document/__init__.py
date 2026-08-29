@@ -6,6 +6,7 @@ from app.modules.document.enums import (
     ChunkContentType,
     ExtractionMethod,
     ExtractionRunStatus,
+    ReviewAction,
     SourceDocumentStatus,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "ChunkContentType",
     "ExtractionMethod",
     "ExtractionRunStatus",
+    "ReviewAction",
     "SourceDocumentStatus",
     "models",
 ]

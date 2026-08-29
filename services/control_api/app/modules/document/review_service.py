@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,8 +14,13 @@ from app.modules.document.candidate_editing import (
     CandidateFieldEditError,
     apply_candidate_field_changes,
 )
-from app.modules.document.enums import CandidateStatus, ExtractionRunStatus
+from app.modules.document.enums import (
+    CandidateStatus,
+    ExtractionRunStatus,
+    ReviewAction,
+)
 from app.modules.document.models import (
+    CandidateReviewEvent,
     DocumentChunk,
     ProfileExtractionCandidate,
     ProfileExtractionRun,
@@ -76,6 +82,7 @@ class DocumentReviewService:
         *,
         revision: int,
         payload: dict[str, Any],
+        actor: str = "system",
     ) -> ProfileExtractionCandidate:
         candidate = await self._candidate_for_update(candidate_id)
         if candidate.revision != revision:
@@ -88,7 +95,7 @@ class DocumentReviewService:
             raise DomainError(
                 "candidate_already_imported", "Imported candidates are immutable", 409
             )
-        return await self._replace_candidate_payload(candidate, payload)
+        return await self._replace_candidate_payload(candidate, payload, actor=actor)
 
     async def update_candidate_fields(
         self,
@@ -96,6 +103,7 @@ class DocumentReviewService:
         *,
         revision: int,
         changes: dict[str, str],
+        actor: str = "system",
     ) -> ProfileExtractionCandidate:
         candidate = await self._candidate_for_update(candidate_id)
         if candidate.revision != revision:
@@ -114,19 +122,45 @@ class DocumentReviewService:
             )
         except CandidateFieldEditError as exc:
             raise DomainError(exc.code, str(exc), 422) from None
-        return await self._replace_candidate_payload(candidate, payload)
+        return await self._replace_candidate_payload(candidate, payload, actor=actor)
 
     async def _replace_candidate_payload(
         self,
         candidate: ProfileExtractionCandidate,
         payload: dict[str, Any],
+        *,
+        actor: str,
     ) -> ProfileExtractionCandidate:
         candidate.reviewed_payload = payload
         candidate.revision += 1
         candidate.review_note = None
         candidate.reviewed_at = None
         candidate.status = CandidateStatus.PENDING.value
-        return await self._validate_locked(candidate)
+        candidate = await self._validate_locked(candidate)
+        await self._record_event(candidate, ReviewAction.SAVED, actor=actor)
+        return candidate
+
+    async def _record_event(
+        self,
+        candidate: ProfileExtractionCandidate,
+        action: ReviewAction,
+        *,
+        actor: str,
+        note: str | None = None,
+        event_metadata: dict[str, Any] | None = None,
+    ) -> CandidateReviewEvent:
+        event = CandidateReviewEvent(
+            candidate_id=candidate.id,
+            actor=actor.strip() or "system",
+            action=action.value,
+            revision=candidate.revision,
+            note=note,
+            payload_snapshot=deepcopy(candidate.reviewed_payload),
+            event_metadata=event_metadata or {},
+        )
+        self.session.add(event)
+        await self.session.flush()
+        return event
 
     async def validate_candidate(
         self, candidate_id: int
@@ -136,7 +170,7 @@ class DocumentReviewService:
         )
 
     async def approve_candidate(
-        self, candidate_id: int, *, revision: int
+        self, candidate_id: int, *, revision: int, actor: str = "system"
     ) -> ProfileExtractionCandidate:
         candidate = await self._candidate_for_update(candidate_id)
         if candidate.revision != revision:
@@ -156,10 +190,16 @@ class DocumentReviewService:
         candidate.status = CandidateStatus.APPROVED.value
         candidate.reviewed_at = datetime.now(UTC)
         await self.session.flush()
+        await self._record_event(candidate, ReviewAction.APPROVED, actor=actor)
         return candidate
 
     async def reject_candidate(
-        self, candidate_id: int, *, revision: int, note: str
+        self,
+        candidate_id: int,
+        *,
+        revision: int,
+        note: str,
+        actor: str = "system",
     ) -> ProfileExtractionCandidate:
         candidate = await self._candidate_for_update(candidate_id)
         if candidate.revision != revision:
@@ -172,14 +212,46 @@ class DocumentReviewService:
             raise DomainError(
                 "candidate_already_imported", "Imported candidates are immutable", 409
             )
+        note = note.strip()
+        if not note:
+            raise DomainError(
+                "candidate_review_note_required", "Reject note is required", 422
+            )
         candidate.status = CandidateStatus.REJECTED.value
         candidate.review_note = note
         candidate.reviewed_at = datetime.now(UTC)
         await self.session.flush()
+        await self._record_event(
+            candidate, ReviewAction.REJECTED, actor=actor, note=note
+        )
+        return candidate
+
+    async def reopen_candidate(
+        self,
+        candidate_id: int,
+        *,
+        revision: int,
+        actor: str = "system",
+    ) -> ProfileExtractionCandidate:
+        candidate = await self._candidate_for_update(candidate_id)
+        if candidate.revision != revision:
+            raise DomainError(
+                "candidate_revision_conflict",
+                "Candidate was modified by another reviewer",
+                409,
+            )
+        if candidate.status != CandidateStatus.APPROVED.value:
+            raise DomainError(
+                "candidate_not_approved", "Only approved candidates can be reopened", 409
+            )
+        candidate.review_note = None
+        candidate.reviewed_at = None
+        candidate = await self._validate_locked(candidate)
+        await self._record_event(candidate, ReviewAction.REOPENED, actor=actor)
         return candidate
 
     async def import_candidate(
-        self, candidate_id: int
+        self, candidate_id: int, *, actor: str = "system"
     ) -> DeviceProfileVersion:
         candidate = await self._candidate_for_update(candidate_id)
         if candidate.imported_profile_version_id is not None:
@@ -216,6 +288,12 @@ class DocumentReviewService:
                 run.status = ExtractionRunStatus.COMPLETED.value
                 run.finished_at = datetime.now(UTC)
             await self.session.flush()
+            await self._record_event(
+                candidate,
+                ReviewAction.IMPORTED,
+                actor=actor,
+                event_metadata={"profile_version_id": profile.id},
+            )
         return profile
 
     async def _resolve_or_create_model(self, payload: dict[str, Any]) -> DeviceModel:

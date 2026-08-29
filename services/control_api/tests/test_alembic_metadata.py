@@ -7,6 +7,7 @@ EXPECTED_TABLES = {
     "basic_capability",
     "capability_command_template",
     "capability_point_binding",
+    "candidate_review_event",
     "device_category",
     "device_category_capability",
     "device_command",

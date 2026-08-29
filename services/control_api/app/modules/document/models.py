@@ -165,6 +165,42 @@ class ProfileExtractionCandidate(IdentityMixin, TimestampMixin, Base):
     extraction_run: Mapped[ProfileExtractionRun] = relationship(
         back_populates="candidate"
     )
+    review_events: Mapped[list["CandidateReviewEvent"]] = relationship(
+        back_populates="candidate"
+    )
+
+
+class CandidateReviewEvent(IdentityMixin, Base):
+    __tablename__ = "candidate_review_event"
+    __table_args__ = (
+        Index(
+            "ix_candidate_review_event_candidate_created",
+            "candidate_id",
+            "created_at",
+        ),
+    )
+
+    candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("profile_extraction_candidate.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    payload_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    event_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    candidate: Mapped[ProfileExtractionCandidate] = relationship(
+        back_populates="review_events"
+    )
 
 
 class DocumentChunk(IdentityMixin, Base):

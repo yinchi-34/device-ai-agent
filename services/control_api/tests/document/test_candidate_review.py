@@ -1,8 +1,10 @@
 import pytest
+from sqlalchemy import select
 
 from app.core.errors import DomainError
 from app.modules.device.models import BasicCapability
 from app.modules.document.models import (
+    CandidateReviewEvent,
     DocumentChunk,
     ProfileExtractionCandidate,
     ProfileExtractionRun,
@@ -123,3 +125,60 @@ async def test_approve_and_reject_record_review_state(db_session):
     assert rejected.status == "rejected"
     assert rejected.review_note == "wrong model"
     assert rejected.reviewed_at is not None
+
+
+async def test_review_actions_append_actor_revision_and_payload_audit(db_session):
+    candidate = await make_candidate(db_session)
+    service = DocumentService(db_session)
+
+    saved = await service.update_candidate_fields(
+        candidate.id,
+        revision=1,
+        changes={"/profile/version/value": "2.0-audited"},
+        actor="reviewer",
+    )
+    await service.approve_candidate(
+        candidate.id, revision=saved.revision, actor="reviewer"
+    )
+    profile = await service.import_candidate(candidate.id, actor="reviewer")
+
+    events = list(
+        (
+            await db_session.scalars(
+                select(CandidateReviewEvent).order_by(CandidateReviewEvent.id)
+            )
+        ).all()
+    )
+    assert [event.action for event in events] == ["saved", "approved", "imported"]
+    assert {event.actor for event in events} == {"reviewer"}
+    assert [event.revision for event in events] == [2, 2, 2]
+    assert events[0].payload_snapshot["profile"]["version"]["value"] == (
+        "2.0-audited"
+    )
+    assert events[-1].event_metadata == {"profile_version_id": profile.id}
+
+
+async def test_reject_requires_note_and_approved_candidate_can_be_reopened(db_session):
+    candidate = await make_candidate(db_session)
+    service = DocumentService(db_session)
+
+    with pytest.raises(DomainError) as excinfo:
+        await service.reject_candidate(candidate.id, revision=1, note="", actor="reviewer")
+    assert excinfo.value.code == "candidate_review_note_required"
+
+    approved = await service.approve_candidate(
+        candidate.id, revision=1, actor="reviewer"
+    )
+    reopened = await service.reopen_candidate(
+        candidate.id, revision=approved.revision, actor="reviewer"
+    )
+
+    assert reopened.status == "valid"
+    events = list(
+        (
+            await db_session.scalars(
+                select(CandidateReviewEvent).order_by(CandidateReviewEvent.id)
+            )
+        ).all()
+    )
+    assert [event.action for event in events] == ["approved", "reopened"]
