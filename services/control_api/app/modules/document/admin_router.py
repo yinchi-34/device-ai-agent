@@ -36,6 +36,7 @@ from app.modules.document.application_service import (
     DocumentApplicationService,
     map_validation_error,
 )
+from app.modules.document.candidate_presenter import present_candidate
 from app.modules.document.file_validation import DocumentValidationError
 from app.modules.document.models import (
     DocumentChunk,
@@ -296,6 +297,12 @@ async def candidate_review(
             "document": candidate.extraction_run.source_document,
             "payload_json": json.dumps(
                 candidate.reviewed_payload, ensure_ascii=False, indent=2
+            ),
+            "review_sections": present_candidate(
+                candidate.original_payload, candidate.reviewed_payload
+            ),
+            "unresolved_suggestions": candidate.reviewed_payload.get(
+                "unresolved_suggestions", []
             ),
             "evidence": evidence,
             "missing_refs": missing_refs,

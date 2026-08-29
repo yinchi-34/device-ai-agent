@@ -126,6 +126,29 @@ async def test_candidate_review_shows_payload_and_traceable_evidence(
     assert "reviewed-payload" in response.text
 
 
+async def test_candidate_review_renders_structured_sections_and_change_diff(
+    db_session, monkeypatch
+):
+    candidate = await make_candidate(db_session)
+    reviewed = candidate_payload()
+    reviewed["profile"]["version"]["value"] = "2.0-reviewed"
+    candidate.reviewed_payload = reviewed
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        response = await client.get(f"/admin/candidates/{candidate.id}")
+
+    assert response.status_code == 200
+    assert "设备型号" in response.text
+    assert "协议" in response.text
+    assert "能力匹配" in response.text
+    assert 'data-review-path="/profile/version/value"' in response.text
+    assert "2.0-reviewed" in response.text
+    assert "原值：1.0" in response.text
+    assert "人工修改" in response.text
+    assert "高级 JSON 编辑" in response.text
+
+
 async def test_candidate_json_can_be_saved_with_revision_check(
     db_session, monkeypatch
 ):

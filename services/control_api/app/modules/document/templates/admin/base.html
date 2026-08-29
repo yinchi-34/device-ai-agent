@@ -28,6 +28,15 @@
     .notice { border-left:4px solid var(--brand); background:#eff6ff; padding:10px 12px; margin-bottom:16px; }
     .evidence { border:1px solid var(--line); border-radius:8px; padding:12px; margin:10px 0; }
     .evidence pre { white-space:pre-wrap; margin:8px 0 0; }
+    .review-section { border-top:1px solid var(--line); padding-top:14px; margin-top:14px; }
+    .review-item { border:1px solid var(--line); border-radius:8px; padding:12px; margin:10px 0; }
+    .review-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+    .review-field { border-left:3px solid #cbd5e1; background:#f8fafc; padding:9px 10px; min-width:0; }
+    .review-field.changed { border-left-color:#d97706; background:#fffbeb; }
+    .review-value { font-weight:650; overflow-wrap:anywhere; white-space:pre-wrap; }
+    .review-meta { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+    .changed-badge { color:#92400e; font-size:12px; font-weight:700; }
+    details > summary { cursor:pointer; font-weight:650; margin-bottom:12px; }
     iframe { width:100%; min-height:680px; border:1px solid var(--line); border-radius:8px; background:white; }
     .errors { color:#991b1b; white-space:pre-wrap; }
     @media (max-width:900px) { .grid { grid-template-columns:1fr; } main { padding:14px; } }
