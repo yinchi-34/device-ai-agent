@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from app.core.errors import DomainError
 from app.modules.device.router import router as device_router
 from app.modules.diagnosis.router import router as diagnosis_router
+from app.modules.document.admin_auth import router as admin_auth_router
 from app.modules.document.admin_router import router as document_admin_router
 from app.modules.document.router import router as document_router
 from app.modules.testing.router import router as testing_router
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(device_router)
+    app.include_router(admin_auth_router)
     app.include_router(document_admin_router)
     app.include_router(document_router)
     app.include_router(testing_router)

@@ -118,7 +118,14 @@ console supports the complete review gate:
 - approve, reject, reopen, and import only to a DRAFT Profile;
 - inspect the immutable reviewer/action/revision audit timeline.
 
-The console uses HTTP Basic authentication plus signed CSRF tokens. Keep it on
+Unauthenticated browser visits redirect to `/admin/login`. The login form uses
+the configured admin credentials and establishes an HttpOnly, SameSite=Strict
+signed session cookie with an eight-hour lifetime. Invalid credentials show an
+inline error, and the header offers a CSRF-protected logout action. Changing
+the admin password invalidates existing sessions. Explicit HTTP Basic requests
+remain supported for development tools. HTML browser visits require the form
+session so cached Basic credentials cannot bypass logout, and no longer trigger a
+native authentication popup. All admin forms use signed CSRF tokens. Keep it on
 localhost, a VPN, or a trusted internal reverse proxy; it is not intended to be
 published directly to the internet. Imported profiles remain drafts and still
 require the normal release workflow.

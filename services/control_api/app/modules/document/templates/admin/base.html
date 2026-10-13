@@ -21,7 +21,7 @@
     button,.button { border:0; border-radius:8px; background:var(--brand); color:#fff; padding:9px 14px; cursor:pointer; text-decoration:none; display:inline-block; }
     button.secondary,.button.secondary { background:#475569; }
     button.danger { background:#b91c1c; }
-    input[type=file],input[type=text],input[type=number],select,textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; background:#fff; }
+    input[type=file],input[type=text],input[type=password],input[type=number],select,textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; background:#fff; }
     textarea { min-height:620px; resize:vertical; font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; }
     .status { display:inline-block; border-radius:999px; background:#e8eef8; padding:3px 9px; font-size:12px; }
     .muted { color:var(--muted); }
@@ -49,7 +49,19 @@
   </style>
 </head>
 <body>
-  <header><a href="/admin/documents">设备文档审核台</a><span class="muted">AI 提取 → 人工审核 → Profile 入库</span></header>
+  <header>
+    <a href="/admin/documents">设备文档审核台</a>
+    <div class="toolbar">
+      <span class="muted">AI 提取 → 人工审核 → Profile 入库</span>
+      {% if admin_user %}
+        <span>{{ admin_user }}</span>
+        <form action="/admin/logout" method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button class="secondary" type="submit">退出登录</button>
+        </form>
+      {% endif %}
+    </div>
+  </header>
   <main>
     {% if message %}<div class="notice">操作完成：{{ message }}</div>{% endif %}
     {% block content %}{% endblock %}

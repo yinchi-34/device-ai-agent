@@ -42,8 +42,9 @@ async def test_admin_console_requires_credentials(client, monkeypatch):
 
     response = await client.get("/admin/documents")
 
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Basic"
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/admin/login?")
+    assert "www-authenticate" not in response.headers
 
 
 async def test_admin_post_requires_signed_csrf_cookie_and_submitted_token(monkeypatch):
@@ -81,6 +82,56 @@ async def test_admin_forms_render_csrf_token(db_session, monkeypatch):
     assert documents.headers["x-content-type-options"] == "nosniff"
     assert documents.headers["x-frame-options"] == "SAMEORIGIN"
     assert documents.headers["referrer-policy"] == "same-origin"
+
+
+async def test_form_login_can_save_review_fields_and_records_actor(
+    db_session, monkeypatch
+):
+    candidate = await make_candidate(db_session)
+    await db_session.commit()
+    monkeypatch.setenv("DEVICE_ADMIN_USERNAME", "reviewer")
+    monkeypatch.setenv("DEVICE_ADMIN_PASSWORD", "review-secret")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()), base_url="http://test"
+    ) as client:
+        login_page = await client.get("/admin/login")
+        assert login_page.status_code == 200
+        csrf_token = client.cookies.get("admin_csrf")
+        login = await client.post(
+            "/admin/login",
+            data={
+                "username": "reviewer",
+                "password": "review-secret",
+                "_csrf_token": csrf_token,
+            },
+        )
+        assert login.status_code == 303
+        review = await client.get(f"/admin/candidates/{candidate.id}")
+        assert review.status_code == 200
+        assert 'action="/admin/logout"' in review.text
+        saved = await client.post(
+            f"/admin/candidates/{candidate.id}/save-fields",
+            data={
+                "_csrf_token": csrf_token,
+                "revision": "1",
+                "field:/profile/version/value": "2.0-session-review",
+            },
+        )
+
+    assert saved.status_code == 303
+    await db_session.refresh(candidate)
+    assert candidate.reviewed_payload["profile"]["version"]["value"] == (
+        "2.0-session-review"
+    )
+    assert candidate.revision == 2
+    event = await db_session.scalar(
+        select(CandidateReviewEvent).where(
+            CandidateReviewEvent.candidate_id == candidate.id
+        )
+    )
+    assert event.action == "saved"
+    assert event.actor == "reviewer"
 
 
 async def test_admin_document_list_renders_existing_review_item(

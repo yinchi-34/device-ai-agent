@@ -1,9 +1,5 @@
-import hashlib
-import hmac
 import json
-import secrets
 from math import ceil
-from pathlib import Path
 from typing import Any
 
 from fastapi import (
@@ -11,15 +7,11 @@ from fastapi import (
     Depends,
     File,
     Form,
-    HTTPException,
     Query,
     Request,
     UploadFile,
-    status,
 )
-from fastapi.responses import FileResponse, RedirectResponse, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,6 +19,11 @@ from sqlalchemy.orm import selectinload
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.db.session import get_db_session
+from app.modules.document.admin_auth import (
+    _render_admin_template,
+    require_admin,
+    require_admin_csrf,
+)
 from app.modules.document.admin_review import (
     REVIEW_QUEUE_FILTERS,
     REVIEW_QUEUE_LABELS,
@@ -50,98 +47,6 @@ from app.modules.document.models import (
 from app.modules.document.router import dispatch_extraction_task, iter_upload_file
 from app.modules.document.service import DocumentService
 from app.modules.document.storage import FileSystemDocumentStorage
-
-security = HTTPBasic(auto_error=False)
-templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
-_CSRF_COOKIE = "admin_csrf"
-_CSRF_HEADER = "x-csrf-token"
-
-
-def require_admin(
-    credentials: HTTPBasicCredentials | None = Depends(security),
-) -> str:
-    settings = Settings()
-    if not settings.admin_password:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Admin review console is not configured",
-        )
-    valid = credentials is not None
-    if valid:
-        valid = secrets.compare_digest(
-            credentials.username.encode(), settings.admin_username.encode()
-        ) and secrets.compare_digest(
-            credentials.password.encode(), settings.admin_password.encode()
-        )
-    if not valid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid admin credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return settings.admin_username
-
-
-def _sign_csrf_nonce(nonce: str, secret: str) -> str:
-    return hmac.new(secret.encode(), nonce.encode(), hashlib.sha256).hexdigest()
-
-
-def _new_csrf_token(secret: str) -> str:
-    nonce = secrets.token_urlsafe(32)
-    return f"{nonce}.{_sign_csrf_nonce(nonce, secret)}"
-
-
-def _valid_csrf_token(token: str | None, secret: str) -> bool:
-    if token is None or len(token) > 256:
-        return False
-    nonce, separator, signature = token.partition(".")
-    if not separator or not nonce or not signature:
-        return False
-    expected = _sign_csrf_nonce(nonce, secret)
-    return secrets.compare_digest(signature, expected)
-
-
-async def require_admin_csrf(request: Request) -> None:
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
-        return
-    secret = Settings().admin_password
-    cookie_token = request.cookies.get(_CSRF_COOKIE)
-    submitted_token = request.headers.get(_CSRF_HEADER)
-    if submitted_token is None:
-        form = await request.form()
-        raw_token = form.get("_csrf_token")
-        submitted_token = raw_token if isinstance(raw_token, str) else None
-    if (
-        not _valid_csrf_token(cookie_token, secret)
-        or submitted_token is None
-        or not secrets.compare_digest(cookie_token, submitted_token)
-    ):
-        raise HTTPException(status_code=403, detail="Invalid admin CSRF token")
-
-
-def _render_admin_template(
-    request: Request, name: str, context: dict[str, Any]
-) -> Response:
-    secret = Settings().admin_password
-    cookie_token = request.cookies.get(_CSRF_COOKIE)
-    token = cookie_token if _valid_csrf_token(cookie_token, secret) else _new_csrf_token(secret)
-    response = templates.TemplateResponse(
-        request=request,
-        name=name,
-        context={**context, "csrf_token": token},
-    )
-    if token != cookie_token:
-        response.set_cookie(
-            _CSRF_COOKIE,
-            token,
-            max_age=8 * 60 * 60,
-            httponly=True,
-            secure=request.url.scheme == "https",
-            samesite="strict",
-            path="/admin",
-        )
-    return response
-
 
 router = APIRouter(
     prefix="/admin",
