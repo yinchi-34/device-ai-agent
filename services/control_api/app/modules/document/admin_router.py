@@ -25,6 +25,7 @@ from app.modules.document.admin_auth import (
     require_admin_csrf,
 )
 from app.modules.document.admin_review import (
+    EXTRACTION_RUN_LABELS,
     REVIEW_QUEUE_FILTERS,
     REVIEW_QUEUE_LABELS,
     ReviewQueueStatus,
@@ -202,12 +203,19 @@ async def document_detail(
     if document is None:
         raise DomainError("not_found", f"SourceDocument {document_id} not found", 404)
     runs = sorted(document.extraction_runs, key=lambda run: run.id, reverse=True)
+    latest_run = runs[0] if runs else None
     return _render_admin_template(
         request,
         "admin/document_detail.html",
         {
             "document": document,
             "runs": runs,
+            "latest_run": latest_run,
+            "current_run_status_label": (
+                EXTRACTION_RUN_LABELS.get(latest_run.status, latest_run.status)
+                if latest_run
+                else "尚未启动"
+            ),
             "message": request.query_params.get("message"),
         },
     )

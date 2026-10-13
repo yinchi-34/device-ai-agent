@@ -6,6 +6,19 @@ from app.modules.document.enums import (
     SourceDocumentStatus,
 )
 
+EXTRACTION_RUN_LABELS = {
+    ExtractionRunStatus.QUEUED.value: "等待处理",
+    ExtractionRunStatus.VALIDATING.value: "校验文档中",
+    ExtractionRunStatus.PARSING.value: "解析文档中",
+    ExtractionRunStatus.EXTRACTING.value: "AI 提取中",
+    ExtractionRunStatus.VALIDATING_OUTPUT.value: "校验 AI 结果中",
+    ExtractionRunStatus.AWAITING_REVIEW.value: "等待人工审核",
+    ExtractionRunStatus.IMPORTING.value: "导入中",
+    ExtractionRunStatus.COMPLETED.value: "已完成",
+    ExtractionRunStatus.FAILED.value: "处理失败",
+    ExtractionRunStatus.CANCELED.value: "已取消",
+}
+
 
 class ReviewQueueStatus(StrEnum):
     READY = "ready"

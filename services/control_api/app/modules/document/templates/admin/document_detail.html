@@ -8,6 +8,11 @@
     <form action="/admin/documents/{{ document.id }}/extract" method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button type="submit">启动 AI 提取</button></form>
   </div>
   <p class="muted">文档 #{{ document.id }} · {{ document.media_type }} · {{ document.file_size_bytes }} bytes · {{ document.validation_status }}</p>
+  <p class="notice" id="current-task-status" role="status">
+    任务当前状态：<strong>{{ current_run_status_label }}</strong>
+    {% if latest_run %} · 任务 #{{ latest_run.id }} · {{ latest_run.status }}{% endif %}
+    · <a href="/admin/documents/{{ document.id }}">刷新状态</a>
+  </p>
 </section>
 <section class="card">
   <h2>提取历史</h2>

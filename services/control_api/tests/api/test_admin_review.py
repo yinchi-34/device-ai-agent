@@ -149,6 +149,67 @@ async def test_admin_document_list_renders_existing_review_item(
     assert "valid" in response.text
 
 
+async def test_document_detail_highlights_latest_task_instead_of_old_failure(
+    db_session, monkeypatch
+):
+    document = SourceDocument(
+        original_file_name="status-manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="d" * 64,
+        storage_uri="original/status-manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    for run_status in ("failed", "parsing"):
+        db_session.add(
+            ProfileExtractionRun(
+                source_document_id=document.id,
+                status=run_status,
+                extraction_provider="fake",
+                extraction_model="extract-v1",
+                embedding_provider="fake",
+                embedding_model="embed-v1",
+            )
+        )
+        await db_session.flush()
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        response = await client.get(f"/admin/documents/{document.id}")
+
+    assert response.status_code == 200
+    status_line = response.text.split('id="current-task-status"', 1)[1].split("</p>", 1)[0]
+    assert "任务当前状态" in status_line
+    assert "解析文档中" in status_line
+    assert "任务 #2" in status_line
+    assert "处理失败" not in status_line
+    assert "刷新状态" in status_line
+
+
+async def test_document_detail_without_tasks_shows_not_started(
+    db_session, monkeypatch
+):
+    document = SourceDocument(
+        original_file_name="new-manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="e" * 64,
+        storage_uri="original/new-manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        response = await client.get(f"/admin/documents/{document.id}")
+
+    assert response.status_code == 200
+    assert "任务当前状态" in response.text
+    assert "尚未启动" in response.text
+
+
 async def test_admin_document_list_filters_failed_runs_and_shows_error(
     db_session, monkeypatch
 ):
