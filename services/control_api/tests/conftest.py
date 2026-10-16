@@ -14,6 +14,14 @@ from app.main import create_app
 # Import model packages so Base.metadata is fully populated.
 from app.modules import device, diagnosis, document, testing  # noqa: F401
 
+TEST_API_TOKEN = "test-api-token"
+API_AUTH_HEADERS = {"Authorization": f"Bearer {TEST_API_TOKEN}"}
+
+
+@pytest.fixture(autouse=True)
+def _api_token(monkeypatch):
+    monkeypatch.setenv("DEVICE_API_TOKENS", TEST_API_TOKEN)
+
 
 def _is_test_database_name(database_name: str) -> bool:
     return database_name.casefold().endswith("_test")
@@ -64,6 +72,8 @@ async def client() -> AsyncIterator[AsyncClient]:
         await _truncate_all(session)
     app = create_app()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=API_AUTH_HEADERS,
     ) as async_client:
         yield async_client

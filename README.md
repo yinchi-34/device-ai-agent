@@ -44,6 +44,19 @@ Requirements: Python 3.12 and a PostgreSQL instance (or
 `docker compose up db`).
 
 
+## API authentication
+
+Every `/api/v1` endpoint requires a bearer token from `DEVICE_API_TOKENS`
+(comma-separated, so a new token can be added before the old one is removed):
+
+```bash
+curl -H "Authorization: Bearer $DEVICE_API_TOKEN" http://localhost:8000/api/v1/device-models
+```
+
+Missing or wrong tokens get `401`. If `DEVICE_API_TOKENS` is empty the API
+answers `503` rather than serving unauthenticated traffic. `/health` stays
+open, and the `/admin` console keeps its own login.
+
 ## Development
 
 ```bash

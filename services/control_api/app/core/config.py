@@ -6,6 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""
+    # Comma-separated bearer tokens accepted by /api/v1; list several to rotate.
+    api_tokens: str = ""
 
     database_url: str = (
         "postgresql+psycopg://device@localhost:5432/device_ai_agent"
