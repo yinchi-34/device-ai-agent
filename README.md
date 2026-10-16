@@ -1,172 +1,132 @@
+<div align="center">
+
 # Device AI Agent
 
-A backend platform for managing industrial device definitions, capabilities,
-and connectivity testing — the foundation for AI-assisted device diagnosis.
+**Turn industrial device manuals into reviewable device profiles, and diagnose
+devices with an AI agent that can only read.**
 
-The current phase ships the **Control API**: a FastAPI service that models
-device categories, models, versioned profiles, protocols, points, and a
-reusable capability catalog, and that generates protocol commands from
-capability definitions.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL 16 + pgvector](https://img.shields.io/badge/PostgreSQL_16-pgvector-4169E1?logo=postgresql&logoColor=white)
+
+English | [简体中文](README.zh-CN.md)
+
+</div>
+
+---
+
+Integrating a new industrial device usually means someone reads a 300-page
+manual, copies register maps into a spreadsheet, and hopes nothing was
+mistyped. Diagnosing it later means more manual reading and more guesswork.
+
+Device AI Agent automates the tedious parts without giving up control:
+
+- **AI drafts, humans approve.** Upload a PDF or DOCX manual (scanned ones
+  too). The system extracts a device profile candidate in which sourced fields
+  link back to the exact page and passage. Nothing becomes a profile until a
+  reviewer approves it, and AI output never releases a profile.
+- **Diagnosis that cannot break anything.** The diagnosis agent reasons over
+  released profiles and manual evidence, and may read one named point at a
+  time through a read-only gateway. It has no write tools, no raw addresses,
+  no SQL, and every step is audited.
+- **One capability model across protocols.** Describe what a device *can do*
+  once (observe, control, diagnose, configure) and bind it to Modbus, BACnet,
+  MQTT, or OPC UA points per profile. Commands are generated from those
+  bindings.
+
+## How it works
+
+```mermaid
+flowchart LR
+    M[PDF / DOCX manual] --> P[Parse + OCR]
+    P --> E[AI extraction<br/>with evidence]
+    E --> R{Human review}
+    R -- approve --> D[Draft profile]
+    D -- release --> RP[Released profile]
+    RP --> A[Read-only<br/>diagnosis agent]
+    K[(Manual knowledge<br/>pgvector)] --> A
+    A -- read one point --> G[Read-only gateway] --> DEV[Device]
+    A --> REP[Audited report]
+```
 
 ## Features
 
-- **Device catalog** — device categories, models, and versioned profiles
-  (draft → released, released configuration is immutable).
-- **Capability model** — a global, protocol-independent `BasicCapability`
-  catalog linked many-to-many with device categories; concrete
-  `ProfileCapability` implementations bound semantically to device points.
-- **Command generation** — capability command templates reference points by
-  role (`select=one` / `select=all`); generated command codes are namespaced
-  as `<capability_code>.<template_code>`.
-- **Testing metadata** — device instances, connection settings with
-  schema-only validation (`/validate-config` never opens sockets), and
-  capability-driven test options.
-
-## Tech stack
-
-- Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic Settings
-- PostgreSQL 16
-- pytest + pytest-asyncio, Ruff
+| | |
+| --- | --- |
+| **Device catalog** | Categories, models, versioned profiles; released configuration is immutable |
+| **Capability model** | Global, protocol-independent capabilities bound to device points by role |
+| **Command generation** | Namespaced commands generated from capability templates |
+| **Manual ingestion** | Quarantined upload, structure and risk checks, deterministic parsing, OCR for scanned pages |
+| **Evidence-linked extraction** | Candidate fields cite source blocks and pages; schema and domain validation before review |
+| **Review console** | Web UI to compare AI output with evidence, edit, approve, reject, and import, with a full audit trail |
+| **Scoped RAG** | pgvector search always limited to a document or device model |
+| **Read-only diagnosis** | Bounded tool-calling loop, step limit, per-run locking, evidence-backed reports |
+| **Evaluation harness** | Versioned cases measuring accuracy, escalation rate, dangerous-action rate, cost, latency |
+| **Bring your own models** | Any OpenAI-compatible endpoint, configured separately for extraction, vision, embeddings, and diagnosis |
 
 ## Quick start
 
-### With Docker
+Requirements: Docker with Compose v2.
 
 ```bash
+git clone https://github.com/yinchi-34/device-ai-agent.git
+cd device-ai-agent
+cp .env.example .env        # set DEVICE_DATABASE_PASSWORD, DEVICE_ADMIN_PASSWORD, model settings
+
 docker compose up --build -d
 docker compose exec control-api alembic upgrade head
 ```
 
+Open:
 
-### Local development
+- API docs: <http://127.0.0.1:8000/docs>
+- Review console: <http://127.0.0.1:8000/admin/documents>
 
-Requirements: Python 3.12 and a PostgreSQL instance (or
-`docker compose up db`).
+### Try it
 
-
-## Development
+Upload a manual and start extraction:
 
 ```bash
-# lint
-ruff check services/control_api
-
-# tests (requires a reachable PostgreSQL; see docker compose)
-cd services/control_api && pytest -v
-
-# check migration state
-cd services/control_api && alembic current
+curl -F file=@manual.pdf -F device_model_id=1 http://127.0.0.1:8000/api/v1/documents
+curl -X POST http://127.0.0.1:8000/api/v1/documents/1/extraction-runs
 ```
+
+Review and import the candidate in the console. After the profile is
+released and a device instance exists, run a diagnosis:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id": 1, "symptom": "Supply air temperature keeps rising"}'
+curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs/1/execute
+```
+
+## Documentation
+
+- [Developer guide](DEVELOPMENT.md): architecture, project structure,
+  configuration reference, API map, local development, testing
+- Interactive API reference: `/docs` on a running instance
+
+## Roadmap
+
+- [x] Phase 1: device catalog, capability model, command generation
+- [x] Phase 2: document intelligence and human review console
+- [x] Phase 3: read-only diagnosis agent and evaluation harness
+- [ ] Production hardening: API authentication, CI, deployment guide
+
+## Security
+
+The review console and API are meant for trusted networks. By default, Docker
+Compose binds ports to `127.0.0.1`. Do not expose the service directly to the
+internet. See [deployment notes](DEVELOPMENT.md#deployment-notes).
+
+## Contributing
+
+Issues and pull requests are welcome. Please run `ruff check .` and
+`pytest -v` from `services/control_api` before submitting; see the
+[developer guide](DEVELOPMENT.md#testing) for test database setup.
 
 ## License
 
-See [LICENSE](LICENSE).
-
-## Phase 2 document intelligence
-
-Phase 2 turns PDF/DOCX manuals, including scanned PDFs, into traceable and
-human-reviewable device profile candidates:
-
-- uploads pass through quarantine, size/type/structure/risk validation, and
-  immutable source storage;
-- deterministic PDF/DOCX parsing and scanned-page OCR produce stable evidence
-  references;
-- extraction, vision, and embedding providers have independent endpoints,
-  credentials, models, and timeouts;
-- candidates require schema/domain validation and explicit human approval;
-- approved imports are transactional and idempotent and create only DRAFT
-  profiles; AI processing never releases a profile;
-- pgvector RAG requires an explicit document or device-model scope and filters
-  by embedding provider, model, and dimension.
-
-Docker Compose runs PostgreSQL 16 with pgvector, Redis 7, the API, and a Celery
-document worker. The API and worker share the `document-files` volume. The
-database is exposed on host port 5433 for local verification.
-
-```powershell
-$env:DEVICE_DATABASE_PASSWORD = "replace-with-a-local-secret"
-docker compose up --build -d
-docker compose exec control-api alembic upgrade head
-docker compose exec db createdb -U device device_ai_agent_test
-$env:DEVICE_DATABASE_URL = "postgresql+psycopg://device:$($env:DEVICE_DATABASE_PASSWORD)@localhost:5433/device_ai_agent_test"
-cd services/control_api
-alembic upgrade head
-pytest -v
-alembic current
-alembic check
-```
-
-Use a URL-encoded database password if it contains reserved URL characters.
-Create `device_ai_agent_test` only once; `createdb` reports that it already
-exists on later setup runs. Pytest refuses to truncate any database whose name
-does not end in `_test`.
-Copy the root `.env.example` to `.env` for Docker Compose. The
-`services/control_api/.env.example` file documents direct host-process
-settings; it is not loaded automatically by Compose. Docker Compose binds the
-API and database ports to `127.0.0.1` by default. Tests use deterministic
-fakes and do not make live provider calls.
-
-### Admin Review Console
-
-Configure `DEVICE_ADMIN_USERNAME` and a strong `DEVICE_ADMIN_PASSWORD`, then
-open `http://127.0.0.1:8000/admin/documents`. The server-rendered internal
-console supports the complete review gate:
-
-- filter and page the document review queue, including extraction failures;
-- compare structured Candidate fields with AI originals and cited evidence;
-- jump from a field to its source block and PDF page;
-- edit allowlisted fields with revision conflict checks and revalidation;
-- approve, reject, reopen, and import only to a DRAFT Profile;
-- inspect the immutable reviewer/action/revision audit timeline.
-
-Unauthenticated browser visits redirect to `/admin/login`. The login form uses
-the configured admin credentials and establishes an HttpOnly, SameSite=Strict
-signed session cookie with an eight-hour lifetime. Invalid credentials show an
-inline error, and the header offers a CSRF-protected logout action. Changing
-the admin password invalidates existing sessions. Explicit HTTP Basic requests
-remain supported for development tools. HTML browser visits require the form
-session so cached Basic credentials cannot bypass logout, and no longer trigger a
-native authentication popup. All admin forms use signed CSRF tokens. Keep it on
-localhost, a VPN, or a trusted internal reverse proxy; it is not intended to be
-published directly to the internet. Imported profiles remain drafts and still
-require the normal release workflow.
-
-## Phase 3 read-only diagnosis agent
-
-Phase 3 adds a bounded model/tool/observation loop with a persistent audit
-trail. The model can inspect device context and released-profile points, search
-manual evidence within the device-model scope, request one named point through
-a read-only gateway, and decode prior raw words with the published profile.
-Write tools, arbitrary addresses, SQL, files, and unrestricted HTTP are not
-available to the agent.
-
-Configure `DEVICE_DIAGNOSIS_LLM_*` for an OpenAI-compatible tool-calling model.
-Configure `DEVICE_DIAGNOSIS_READ_GATEWAY_URL` only when a read-only gateway is
-available. The gateway contract is `POST /read-point`; the Control API resolves
-the point and address from the released profile before calling it. Supported
-observations include `success`, `timeout`, `connection_refused`, and
-`modbus_exception`.
-
-The first synchronous API slice is:
-
-- `POST /api/v1/diagnosis-runs`
-- `POST /api/v1/diagnosis-runs/{run_id}/execute`
-- `GET /api/v1/diagnosis-runs/{run_id}`
-
-Every model action, validated arguments, tool observation, evidence reference,
-and terminal report is stored in `diagnosis_run` / `diagnosis_step`. A hard
-step limit, per-run PostgreSQL advisory lock, and per-step commits prevent
-duplicate execution and preserve the latest completed step after a process
-failure. Terminal reports must cite at least one persisted evidence step.
-
-Versioned diagnosis evaluation cases live in
-`services/control_api/evals/diagnosis/cases.json`. Run repeated live-model
-evaluation from `services/control_api`:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/run_diagnosis_evals.py --trials 3
-```
-
-The report includes classification accuracy, handoff/escalation rate,
-dangerous-action rate, total tokens, average latency, and average step count.
-The dataset pins the system Prompt SHA-256 so Prompt changes require an
-explicit baseline review.
+[MIT](LICENSE)
