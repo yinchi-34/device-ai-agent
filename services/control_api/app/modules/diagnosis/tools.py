@@ -222,6 +222,7 @@ class RuntimeDiagnosisToolbox:
                 {
                     "code": point.code,
                     "name": point.name,
+                    "protocol_spec_id": point.protocol_spec_id,
                     "address_text": point.address_text,
                     "data_type": point.data_type,
                     "access_mode": point.access_mode,

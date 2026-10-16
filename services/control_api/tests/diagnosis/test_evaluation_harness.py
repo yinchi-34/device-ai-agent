@@ -200,3 +200,40 @@ async def test_evaluation_tracks_invalid_arguments_and_per_label_accuracy():
     assert report.metrics.invalid_tool_argument_rate == 1.0
     assert report.metrics.classification_accuracy_by_label == {"encoding": 1.0}
     assert report.metrics.pass_rate == 1.0
+
+
+async def test_scenario_read_point_rejects_connection_for_another_protocol():
+    case = _case()
+    case.tool_results["get_device_context"] = {
+        "connections": [{"id": 1, "protocol_spec_id": 10}, {"id": 2, "protocol_spec_id": 20}]
+    }
+    case.tool_results["list_profile_points"]["points"][0]["protocol_spec_id"] = 10
+    toolbox = ScenarioToolbox(case)
+
+    mismatch = await toolbox.execute(
+        "read_point", {"connection_id": 2, "point_code": "pressure"}, []
+    )
+    match = await toolbox.execute(
+        "read_point", {"connection_id": 1, "point_code": "pressure"}, []
+    )
+
+    assert mismatch == {"status": "connection_protocol_mismatch"}
+    assert match["status"] == "success"
+
+
+async def test_evaluation_fails_runs_ending_in_terminal_policy_violation():
+    case = _case(expected={"status": "escalated"})
+
+    def provider_factory(case, trial_index):
+        return ScriptedProvider(
+            [AgentDecision(tool_name="escalate_to_human", arguments={})]
+        )
+
+    report = await run_evaluation([case], provider_factory=provider_factory)
+    run = report.runs[0]
+
+    assert run.status == "escalated"
+    assert run.passed is False
+    assert run.failure_reasons == ["terminal_policy_violation"]
+    assert run.invalid_tool_arguments == 1
+    assert report.metrics.invalid_tool_argument_rate == 1.0

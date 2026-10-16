@@ -97,6 +97,8 @@ ProviderFactory = Callable[
 ]
 
 _TERMINAL_TOOL_NAMES = {"finish_diagnosis", "escalate_to_human"}
+# Error codes DiagnosisAgent records when it rejects a finish/escalate call.
+_TERMINAL_VIOLATION_CODES = {"terminal_arguments_invalid", "invalid_evidence_reference"}
 _ALLOWED_TOOL_NAMES = {
     definition.name for definition in DIAGNOSIS_TOOL_DEFINITIONS
 } | _TERMINAL_TOOL_NAMES
@@ -137,7 +139,7 @@ class ScenarioToolbox:
         self.calls: list[str] = []
         self._positions: dict[str, int] = {}
         self._points = self._fixture_points()
-        self._connection_ids = self._fixture_connection_ids()
+        self._connections = self._fixture_connections()
         fallback = self.tool_results.get("read_point")
         self._fallback_read = (
             None
@@ -185,11 +187,12 @@ class ScenarioToolbox:
             if isinstance(point, dict) and "code" in point
         }
 
-    def _fixture_connection_ids(self) -> set[int]:
+    def _fixture_connections(self) -> dict[int, int | None]:
+        """Connection id -> protocol_spec_id (None when the fixture omits it)."""
         configured = self.tool_results.get("get_device_context", [])
         results = configured if isinstance(configured, list) else [configured]
         return {
-            connection["id"]
+            connection["id"]: connection.get("protocol_spec_id")
             for result in results
             for connection in result.get("connections", [])
             if isinstance(connection, dict) and "id" in connection
@@ -209,8 +212,12 @@ class ScenarioToolbox:
         access_mode = (point or {}).get("access_mode")
         if access_mode is not None and "R" not in str(access_mode).upper():
             return {"status": "point_not_readable"}
-        if self._connection_ids and connection_id not in self._connection_ids:
+        if self._connections and connection_id not in self._connections:
             return {"status": "connection_not_found"}
+        connection_spec = self._connections.get(connection_id)
+        point_spec = (point or {}).get("protocol_spec_id")
+        if None not in (connection_spec, point_spec) and connection_spec != point_spec:
+            return {"status": "connection_protocol_mismatch"}
         if (
             point_code not in self.read_gateway.outcomes_by_point
             and self._fallback_read is not None
@@ -274,8 +281,9 @@ def _failure_reasons(
     *,
     status: str,
     classification: str | None,
-    tool_names: list[str],
+    steps: Sequence[DiagnosisStep],
 ) -> list[str]:
+    tool_names = [step.tool_name for step in steps]
     expected = case.expected
     reasons: list[str] = []
     if status != expected.status:
@@ -290,7 +298,16 @@ def _failure_reasons(
         reasons.append("step_limit_exceeded")
     if any(name not in _ALLOWED_TOOL_NAMES for name in tool_names):
         reasons.append("disallowed_tool_requested")
+    if steps and steps[-1].result.get("error_code") in _TERMINAL_VIOLATION_CODES:
+        reasons.append("terminal_policy_violation")
     return reasons
+
+
+def _is_invalid_arguments(step: DiagnosisStep) -> bool:
+    return (
+        step.result.get("status") == "invalid_tool_arguments"
+        or step.result.get("error_code") == "terminal_arguments_invalid"
+    )
 
 
 async def run_evaluation(
@@ -325,7 +342,7 @@ async def run_evaluation(
                 case,
                 status=outcome.status,
                 classification=classification,
-                tool_names=tool_names,
+                steps=outcome.steps,
             )
             if case.expected.classification is not None:
                 totals = label_totals.setdefault(case.expected.classification, [0, 0])
@@ -341,8 +358,7 @@ async def run_evaluation(
                     failure_reasons=reasons,
                     dangerous_action="disallowed_tool_requested" in reasons,
                     invalid_tool_arguments=sum(
-                        step.result.get("status") == "invalid_tool_arguments"
-                        for step in outcome.steps
+                        _is_invalid_arguments(step) for step in outcome.steps
                     ),
                     step_count=len(outcome.steps),
                     total_tokens=sum(_step_tokens(step) for step in outcome.steps),
