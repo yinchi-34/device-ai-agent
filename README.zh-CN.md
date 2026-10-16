@@ -1,326 +1,123 @@
+<div align="center">
+
 # Device AI Agent
+
+**把工业设备说明书变成可审核的设备 Profile，再用一个只能“读”的 AI Agent 诊断设备。**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL 16 + pgvector](https://img.shields.io/badge/PostgreSQL_16-pgvector-4169E1?logo=postgresql&logoColor=white)
 
 [English](README.md) | 简体中文
 
-面向工业设备的后端平台，提供设备定义管理、基于说明书的 Profile 抽取，以及只读的
-AI 辅助诊断。
+</div>
 
-所有功能运行在一个服务 **Control API**（FastAPI + PostgreSQL）中，另有一个
-Celery worker 负责文档处理。项目分为三个阶段：
+---
 
-| 阶段 | 模块 | 功能 |
-| --- | --- | --- |
-| 1 | `device/`、`testing/` | 设备目录、版本化 Profile、能力模型、命令生成、设备实例与连接元数据 |
-| 2 | `document/` | PDF/DOCX 说明书导入、OCR、AI 抽取生成可审核的 Profile 候选、管理审核台、pgvector RAG |
-| 3 | `diagnosis/` | 有步数上限、全程审计的只读诊断 Agent，附带评测工具 |
+接入一台新的工业设备，往往要有人啃完几百页说明书，把寄存器表抄进表格，再祈祷
+没有抄错。设备出了问题，又得回头翻说明书、凭经验排查。
 
-## 目录
+Device AI Agent 把繁琐的部分自动化，同时不放弃人的控制权：
 
-- [架构](#架构)
-- [快速开始（Docker）](#快速开始docker)
-- [本地开发](#本地开发)
-- [配置](#配置)
-- [API 概览](#api-概览)
-- [阶段 1：设备目录与能力模型](#阶段-1设备目录与能力模型)
-- [阶段 2：文档智能](#阶段-2文档智能)
-- [阶段 3：只读诊断 Agent](#阶段-3只读诊断-agent)
-- [测试](#测试)
-- [部署注意事项](#部署注意事项)
-- [仓库结构](#仓库结构)
+- **AI 起草，人来把关。** 上传 PDF 或 DOCX 说明书（扫描版也可以），系统抽取出
+  设备 Profile 候选，有来源的字段都能追溯到原文的具体页码和段落。候选必须经过
+  人工批准才会成为 Profile，AI 也永远不会发布 Profile。
+- **诊断过程不会弄坏任何东西。** 诊断 Agent 基于已发布的 Profile 和说明书证据
+  推理，每次只能通过只读网关读取一个指定点位。它没有写操作、不能用原始地址、
+  不能执行 SQL，每一步都有审计记录。
+- **一套能力模型，跨所有协议。** 只需描述一次设备“能做什么”（观测、控制、诊断、
+  配置），再在各个 Profile 中绑定到 Modbus、BACnet、MQTT 或 OPC UA 点位。
+  命令根据这些绑定自动生成。
 
-## 架构
+## 工作原理
 
-```text
-                 ┌──────────────────────────────┐
-  HTTP 客户端 ──▶│ control-api (FastAPI)        │──▶ OpenAI 兼容的
-  /api/v1        │  device · testing · document │    LLM / 视觉 /
-  /admin  ──────▶│  diagnosis · 管理审核台      │    Embedding 接口
-                 └───────┬──────────────┬───────┘
-                         │              │ 投递任务         ┌──────────────────┐
-                         ▼              ▼                  │ 只读网关         │
-                ┌──────────────┐  ┌──────────┐             │ POST /read-point │
-                │ PostgreSQL 16│  │ Redis 7  │             │ （可选）         │
-                │  + pgvector  │  └────┬─────┘             └────────▲─────────┘
-                └──────▲───────┘       │                            │
-                       │               ▼                            │
-                       │     ┌───────────────────┐    诊断工具 ─────┘
-                       └─────│ document-worker   │    调用
-                             │ (Celery)          │
-                             └───────────────────┘
-          control-api 与 document-worker 共享 `document-files` 卷
+```mermaid
+flowchart LR
+    M[PDF / DOCX 说明书] --> P[解析 + OCR]
+    P --> E[AI 抽取<br/>附带证据]
+    E --> R{人工审核}
+    R -- 批准 --> D[草稿 Profile]
+    D -- 发布 --> RP[已发布 Profile]
+    RP --> A[只读<br/>诊断 Agent]
+    K[(说明书知识库<br/>pgvector)] --> A
+    A -- 读取单个点位 --> G[只读网关] --> DEV[设备]
+    A --> REP[可审计的诊断报告]
 ```
 
-技术栈：Python 3.12、FastAPI、SQLAlchemy 2（async，psycopg 3）、Alembic、
-Pydantic Settings、Celery + Redis、PostgreSQL 16 + pgvector、Jinja2（管理审核台）、
-pytest + pytest-asyncio、Ruff。
+## 功能
 
-## 快速开始（Docker）
+| | |
+| --- | --- |
+| **设备目录** | 类别、型号、版本化 Profile；发布后的配置不可修改 |
+| **能力模型** | 全局、与协议无关的能力，按角色绑定到设备点位 |
+| **命令生成** | 由能力模板生成带命名空间的命令 |
+| **说明书导入** | 隔离上传、结构与风险校验、确定性解析、扫描页 OCR |
+| **带证据的抽取** | 候选字段引用源文本块和页码；进入审核前先做 Schema 和领域校验 |
+| **审核台** | Web 界面对照 AI 输出与原文证据，可编辑、批准、驳回、导入，全程留痕 |
+| **限定范围的 RAG** | pgvector 检索始终限定在某个文档或设备型号内 |
+| **只读诊断** | 有边界的工具调用循环、步数上限、任务级加锁、基于证据的报告 |
+| **评测工具** | 版本化用例，衡量准确率、升级率、危险操作率、成本和延迟 |
+| **自选模型** | 任何 OpenAI 兼容接口，抽取、视觉、Embedding、诊断可分别配置 |
+
+## 快速开始
 
 环境要求：Docker 及 Compose v2。
 
 ```bash
-cp .env.example .env
-# 编辑 .env：设置 DEVICE_DATABASE_PASSWORD 和 DEVICE_ADMIN_PASSWORD，
-# 以及需要用到的 DEVICE_DOCUMENT_* / DEVICE_DIAGNOSIS_* 模型服务配置
+git clone https://github.com/yinchi-34/device-ai-agent.git
+cd device-ai-agent
+cp .env.example .env        # 设置 DEVICE_DATABASE_PASSWORD、DEVICE_ADMIN_PASSWORD 和模型配置
 
 docker compose up --build -d
 docker compose exec control-api alembic upgrade head
 ```
 
-启动后检查：
+打开：
 
-- 健康检查：<http://127.0.0.1:8000/health> → `{"status": "ok"}`
-- 交互式 API 文档（Swagger UI）：<http://127.0.0.1:8000/docs>
-- 管理审核台：<http://127.0.0.1:8000/admin/documents>
+- API 文档：<http://127.0.0.1:8000/docs>
+- 审核台：<http://127.0.0.1:8000/admin/documents>
 
-Compose 会启动四个服务：`db`（pgvector/pgvector:pg16）、`redis`、`control-api`
-和 `document-worker`。API 和数据库端口只绑定在 `127.0.0.1`（API 使用
-`DEVICE_API_PORT`，默认 8000；数据库使用 `DEVICE_DATABASE_PORT`，默认 5433）。
-Redis 不对宿主机暴露端口。
+### 试一试
 
-未设置 `DEVICE_DATABASE_PASSWORD` 时 Compose 会拒绝启动。密码会被拼进
-`DEVICE_DATABASE_URL`，所以如果其中含有 URL 保留字符，需要先做 URL 编码。
-
-## 本地开发
-
-在宿主机上运行 API，连接 Compose 启动的数据库：
+上传一份说明书并开始抽取：
 
 ```bash
-docker compose up -d db
-
-cd services/control_api
-python3.12 -m venv .venv
-source .venv/bin/activate            # Windows: .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-
-export DEVICE_DATABASE_URL="postgresql+psycopg://device:<password>@localhost:5433/device_ai_agent"
-alembic upgrade head
-uvicorn app.main:app --reload
+curl -F file=@manual.pdf -F device_model_id=1 http://127.0.0.1:8000/api/v1/documents
+curl -X POST http://127.0.0.1:8000/api/v1/documents/1/extraction-runs
 ```
 
-应用只从 `DEVICE_*` 环境变量读取配置，不会自动加载 `.env` 文件。
-`services/control_api/.env.example` 列出了宿主机进程需要导出的变量（根目录的
-`.env.example` 是给 Compose 用的）。
-
-如果要在宿主机上运行文档 worker，还需要一个 `DEVICE_REDIS_URL` 能访问到的 Redis
-（Compose 里的 Redis 没有暴露到宿主机）：
+在审核台中审核并导入候选。Profile 发布、设备实例创建好之后，发起一次诊断：
 
 ```bash
-celery -A app.modules.document.celery_app:celery_app worker --loglevel=INFO
+curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id": 1, "symptom": "送风温度持续升高"}'
+curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs/1/execute
 ```
 
-## 配置
+## 文档
 
-所有配置项都使用 `DEVICE_` 前缀（见
-[`app/core/config.py`](services/control_api/app/core/config.py)）。
+- [开发文档](DEVELOPMENT.zh-CN.md)：架构、项目结构、配置说明、API 一览、本地开发、测试
+- 交互式 API 文档：运行中实例的 `/docs`
 
-| 分组 | 变量 | 说明 |
-| --- | --- | --- |
-| 数据库 | `DEVICE_DATABASE_URL`（宿主机）或 `DEVICE_DATABASE_NAME/USER/PASSWORD/PORT`（Compose） | Compose 会自行拼接 URL |
-| Redis | `DEVICE_REDIS_URL` | Celery broker |
-| 管理审核台 | `DEVICE_ADMIN_USERNAME`、`DEVICE_ADMIN_PASSWORD` | 未设置密码时审核台不可用 |
-| 文档存储 | `DEVICE_DOCUMENT_STORAGE_ROOT`、`DEVICE_DOCUMENT_MAX_FILE_BYTES`、`DEVICE_DOCUMENT_MAX_PDF_PAGES`、`DEVICE_DOCUMENT_MIN_TEXT_CHARS_PER_PAGE`、`DEVICE_DOCUMENT_TASK_VISIBILITY_TIMEOUT_SECONDS` | 文本量低于阈值的页面会走 OCR |
-| 抽取 LLM | `DEVICE_DOCUMENT_LLM_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS/MAX_OUTPUT_TOKENS`、`DEVICE_DOCUMENT_EXTRACTION_GROUP_MAX_TOKENS` | OpenAI 兼容接口 |
-| 视觉（OCR） | `DEVICE_DOCUMENT_VISION_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS` | OpenAI 兼容接口 |
-| Embedding | `DEVICE_DOCUMENT_EMBEDDING_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS` | 根目录 `.env.example` 默认指向本地 Ollama 的 `bge-m3` |
-| 诊断 LLM | `DEVICE_DIAGNOSIS_LLM_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS` | 必须支持工具调用 |
-| 只读网关 | `DEVICE_DIAGNOSIS_READ_GATEWAY_URL/TOKEN/TIMEOUT_SECONDS` | 可选；没有网关时留空 |
+## 路线图
 
-每个 AI 服务（抽取、视觉、Embedding、诊断）都有独立的地址、密钥、模型和超时，
-可以分别指向不同厂商或本地服务。
+- [x] 阶段 1：设备目录、能力模型、命令生成
+- [x] 阶段 2：文档智能与人工审核台
+- [x] 阶段 3：只读诊断 Agent 与评测工具
+- [ ] 生产化：API 认证、CI、部署指南
 
-## API 概览
+## 安全
 
-所有 JSON 接口都在 `/api/v1` 下。完整的请求/响应结构见 `/docs` 自动生成的
-OpenAPI 文档。领域错误返回 `{"code": "...", "message": "..."}` 及相应的 HTTP
-状态码。
+审核台和 API 面向可信网络使用。Docker Compose 默认只把端口绑定到
+`127.0.0.1`。请不要把服务直接暴露到公网，详见[部署注意事项](DEVELOPMENT.zh-CN.md#部署注意事项)。
 
-| 类别 | 接口 |
-| --- | --- |
-| 目录 | `POST /device-categories`、`POST/GET /device-models`、`POST/GET /capabilities`、`POST/GET /device-categories/{id}/capabilities[/{capability_id}]` |
-| Profile | `POST /device-models/{id}/profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/protocols`、`POST /protocols/{id}/points`、`GET /profiles/{id}/points`、`POST /profiles/{id}/release` |
-| 能力 | `POST /profiles/{id}/capabilities/{capability_id}`、`POST /profile-capabilities/{id}/point-bindings`、`GET /profiles/{id}/capabilities` |
-| 命令 | `POST /capabilities/{id}/command-templates`、`GET /profiles/{id}/commands` |
-| 测试 | `POST /devices`、`GET /devices/{id}/context`、`POST /devices/{id}/connections`、`POST /connections/{id}/validate-config`、`GET /devices/{id}/test-options` |
-| 文档 | `POST /documents`、`GET /documents/{id}`、`POST /documents/{id}/extraction-runs`、`GET /extraction-runs/{id}`、`POST /extraction-runs/{id}/retry`、`GET /extraction-runs/{id}/candidate` |
-| 候选 | `PATCH /extraction-candidates/{id}`、`POST /extraction-candidates/{id}/validate`、`.../approve`、`.../reject`、`.../import` |
-| 检索 | `POST /document-search` |
-| 诊断 | `POST /diagnosis-runs`、`POST /diagnosis-runs/{id}/execute`、`GET /diagnosis-runs/{id}` |
+## 参与贡献
 
-`GET /health`（不在 `/api/v1` 下）是存活探针。
-
-## 阶段 1：设备目录与能力模型
-
-- **设备目录**：设备类别、型号和版本化 Profile。Profile 从 `draft` 变为
-  `released`，发布后的配置不可修改。
-- **协议与点位**：Profile 包含协议（模拟器、Modbus TCP/RTU、BACnet/IP、MQTT、
-  OPC UA）及其点位。`address_text` 不要求唯一，一个点位可以服务多个能力。
-- **能力模型**：全局的、与协议无关的 `BasicCapability` 目录，与设备类别是多对多
-  关系。`ProfileCapability` 为某个 Profile 实现一个基础能力，并通过
-  `CapabilityPointBinding` 的角色绑定到点位。
-- **命令生成**：能力命令模板按角色引用点位（`select=one` / `select=all`），
-  从不引用具体的点位 ID。生成的命令编码带命名空间：
-  `<capability_code>.<template_code>`。
-- **测试元数据**：设备实例、连接配置和基于能力的测试选项。`/validate-config`
-  只做 JSON Schema 校验，不会建立任何网络连接。
-
-## 阶段 2：文档智能
-
-阶段 2 把 PDF/DOCX 说明书（包括扫描版 PDF）转换为可追溯、可人工审核的设备
-Profile 候选：
-
-1. **上传**：文件先进入隔离区，经过大小、类型、结构和风险校验，再写入不可变的
-   源文件存储。
-2. **解析**：确定性的 PDF/DOCX 解析加上扫描页 OCR，生成稳定的证据引用（文本块和
-   页码）。
-3. **抽取**：worker 对内容分组后交给抽取模型生成 Profile 候选；有来源的字段
-   （如型号信息、能力和点位绑定）会附带证据引用。
-4. **审核**：候选必须通过 Schema/领域校验，并由人工明确批准。
-5. **导入**：批准后的导入是事务性且幂等的，只会创建 DRAFT 状态的 Profile。
-   AI 处理永远不会发布 Profile。
-
-RAG 检索（`/document-search`）基于 pgvector，必须显式指定文档或设备型号范围，
-并按 Embedding 服务、模型和维度过滤。
-
-### 管理审核台
-
-设置 `DEVICE_ADMIN_USERNAME` 和足够强的 `DEVICE_ADMIN_PASSWORD`，然后打开
-<http://127.0.0.1:8000/admin/documents>。这个服务端渲染的审核台覆盖完整的审核流程：
-
-- 筛选、分页查看文档审核队列，包括抽取失败的文档；
-- 对照结构化的候选字段、AI 原始输出和引用的证据；
-- 从字段跳转到对应的源文本块和 PDF 页面；
-- 编辑白名单内的字段，带版本冲突检查和重新校验；
-- 批准、驳回、重新打开，以及导入（只会导入为 DRAFT Profile）；
-- 查看不可变的审核人/操作/版本审计时间线。
-
-安全机制：
-
-- 浏览器访问会重定向到 `/admin/login`，登录后签发 HttpOnly、`SameSite=Strict`
-  的签名会话 Cookie，有效期 8 小时。修改管理员密码会使已有会话失效。
-- 所有管理表单（包括登录和登出）都使用签名 CSRF Token。
-- 开发工具仍可显式使用 HTTP Basic 认证，但浏览器的 HTML 访问必须使用表单会话，
-  因此浏览器缓存的 Basic 凭据无法绕过登出。
-- 管理页面响应会带上 `Cache-Control: no-store` 等安全响应头。
-
-审核台请只在 localhost、VPN 或可信的内网反向代理后使用，不要直接暴露到公网。
-
-## 阶段 3：只读诊断 Agent
-
-阶段 3 增加了一个有边界的“模型 → 工具 → 观测”循环，并持久化完整审计记录。
-Agent 可以：
-
-- 查看设备上下文和已发布 Profile 的点位；
-- 在设备型号范围内检索说明书证据；
-- 通过只读网关读取一个指定点位；
-- 用已发布的 Profile 解码之前读到的原始寄存器值。
-
-Agent 无法使用写操作、任意地址、SQL、文件或不受限的 HTTP。
-
-`DEVICE_DIAGNOSIS_LLM_*` 需配置为支持工具调用的 OpenAI 兼容模型。只有在确实有
-只读网关时才设置 `DEVICE_DIAGNOSIS_READ_GATEWAY_URL`。网关协议是
-`POST /read-point`；Control API 会先根据已发布的 Profile 解析出点位和地址，再调用
-网关。支持的观测结果有 `success`、`timeout`、`connection_refused` 和
-`modbus_exception`。
-
-典型流程：
-
-```text
-POST /api/v1/diagnosis-runs              → 创建诊断任务（device_id、symptom、max_steps）
-POST /api/v1/diagnosis-runs/{id}/execute → 执行 Agent 循环
-GET  /api/v1/diagnosis-runs/{id}         → 查看步骤和最终报告
-```
-
-每一次模型动作、校验后的参数、工具观测、证据引用和最终报告都保存在
-`diagnosis_run` / `diagnosis_step` 中。硬性步数上限、每个任务的 PostgreSQL
-advisory lock 和逐步提交，可以防止重复执行，并在进程故障后保留最近完成的步骤。
-最终报告必须引用至少一个已持久化的证据步骤。
-
-### 评测
-
-版本化的评测用例在
-[`services/control_api/evals/diagnosis/cases.json`](services/control_api/evals/diagnosis/cases.json)。
-在 `services/control_api` 目录下运行多轮真实模型评测：
-
-```bash
-python scripts/run_diagnosis_evals.py --trials 3
-```
-
-报告包含分类准确率、转人工/升级率、危险操作率、总 Token 数、平均延迟和平均步数。
-数据集固定了系统 Prompt 的 SHA-256，因此修改 Prompt 需要显式重新审定基线。
-
-## 测试
-
-测试需要一个名称以 `_test` 结尾的 PostgreSQL 数据库；pytest 会拒绝清空其他任何
-数据库。测试使用确定性的假实现，不会调用真实的模型服务。
-
-用 Compose 数据库做一次性准备：
-
-```bash
-docker compose up -d db
-docker compose exec db createdb -U device device_ai_agent_test
-```
-
-然后在 `services/control_api` 目录下运行（bash）：
-
-```bash
-export DEVICE_DATABASE_URL="postgresql+psycopg://device:<password>@localhost:5433/device_ai_agent_test"
-alembic upgrade head
-
-ruff check .
-pytest -v
-alembic current
-alembic check
-```
-
-PowerShell 写法：
-
-```powershell
-$env:DEVICE_DATABASE_PASSWORD = "replace-with-a-local-secret"
-$env:DEVICE_DATABASE_URL = "postgresql+psycopg://device:$($env:DEVICE_DATABASE_PASSWORD)@localhost:5433/device_ai_agent_test"
-cd services/control_api
-alembic upgrade head
-pytest -v
-alembic current
-alembic check
-```
-
-之后再运行 `createdb` 会提示数据库已存在，这是正常的。
-
-## 部署注意事项
-
-当前的 Compose 配置面向本地和内网使用。暴露到其他环境之前：
-
-- 为 `DEVICE_DATABASE_PASSWORD` 和 `DEVICE_ADMIN_PASSWORD` 设置强且唯一的值，
-  模型服务的 API Key 不要提交到版本库；
-- 每次发布时，先运行 `alembic upgrade head`，再启动新的 API 和 worker 容器；
-- 在反向代理上终止 TLS，并把 `/admin` 限制在可信网络内；
-- `document-files` 卷和 PostgreSQL 数据要一起持久化和备份：源文档存在卷里，
-  元数据存在数据库里。
-
-## 仓库结构
-
-```text
-.
-├── docker-compose.yml          # db、redis、control-api、document-worker
-├── .env.example                # Compose 配置
-└── services/control_api/
-    ├── app/
-    │   ├── core/               # 配置、领域错误
-    │   ├── db/                 # SQLAlchemy base 和异步 session
-    │   └── modules/
-    │       ├── device/         # 目录、Profile、能力、命令
-    │       ├── testing/        # 设备实例、连接、测试选项
-    │       ├── document/       # 导入、抽取、审核台、RAG
-    │       └── diagnosis/      # 只读 Agent、工具、网关、评测
-    ├── alembic/                # 数据库迁移
-    ├── evals/diagnosis/        # 版本化诊断评测用例
-    ├── scripts/                # run_diagnosis_evals.py
-    ├── tests/
-    ├── Dockerfile
-    └── pyproject.toml
-```
+欢迎提交 Issue 和 Pull Request。提交前请在 `services/control_api` 目录下运行
+`ruff check .` 和 `pytest -v`；测试数据库的准备方法见[开发文档](DEVELOPMENT.zh-CN.md#测试)。
 
 ## 许可证
 
-见 [LICENSE](LICENSE)。
+[MIT](LICENSE)
