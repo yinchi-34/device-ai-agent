@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import Identity, require_identity
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.db.session import get_db_session
@@ -118,9 +119,10 @@ async def update_candidate(
     candidate_id: int,
     payload: schemas.CandidatePatch,
     session: AsyncSession = Depends(get_db_session),
+    identity: Identity = Depends(require_identity),
 ) -> object:
     candidate = await DocumentService(session).update_candidate(
-        candidate_id, revision=payload.revision, payload=payload.payload, actor="api"
+        candidate_id, revision=payload.revision, payload=payload.payload, actor=identity.actor
     )
     await session.commit()
     await session.refresh(candidate)
@@ -148,9 +150,10 @@ async def approve_candidate(
     candidate_id: int,
     payload: schemas.CandidateAction,
     session: AsyncSession = Depends(get_db_session),
+    identity: Identity = Depends(require_identity),
 ) -> object:
     candidate = await DocumentService(session).approve_candidate(
-        candidate_id, revision=payload.revision, actor="api"
+        candidate_id, revision=payload.revision, actor=identity.actor
     )
     await session.commit()
     await session.refresh(candidate)
@@ -165,12 +168,13 @@ async def reject_candidate(
     candidate_id: int,
     payload: schemas.CandidateAction,
     session: AsyncSession = Depends(get_db_session),
+    identity: Identity = Depends(require_identity),
 ) -> object:
     candidate = await DocumentService(session).reject_candidate(
         candidate_id,
         revision=payload.revision,
         note=payload.note or "",
-        actor="api",
+        actor=identity.actor,
     )
     await session.commit()
     await session.refresh(candidate)
@@ -186,10 +190,11 @@ async def import_candidate(
     candidate_id: int,
     response: Response,
     session: AsyncSession = Depends(get_db_session),
+    identity: Identity = Depends(require_identity),
 ) -> object:
     candidate = await DocumentService(session)._candidate_for_update(candidate_id)
     already_imported = candidate.imported_profile_version_id is not None
-    profile = await DocumentService(session).import_candidate(candidate_id, actor="api")
+    profile = await DocumentService(session).import_candidate(candidate_id, actor=identity.actor)
     await session.commit()
     response.status_code = 200 if already_imported else 201
     return {"profile_version_id": profile.id}

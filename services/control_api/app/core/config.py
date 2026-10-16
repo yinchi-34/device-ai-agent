@@ -6,8 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""
-    # Comma-separated bearer tokens accepted by /api/v1; list several to rotate.
-    api_tokens: str = ""
+    # /api/v1 accepts JWTs signed by this OIDC identity provider.
+    oidc_issuer: str = ""
+    oidc_audience: str = ""
+    # Optional; discovered from the issuer's openid-configuration when empty.
+    oidc_jwks_url: str = ""
+    # First non-empty claim becomes the audit actor.
+    oidc_actor_claims: str = "email,preferred_username,azp,client_id,sub"
+    oidc_leeway_seconds: int = 30
 
     database_url: str = (
         "postgresql+psycopg://device@localhost:5432/device_ai_agent"

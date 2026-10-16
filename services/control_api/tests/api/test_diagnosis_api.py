@@ -11,7 +11,7 @@ from app.modules.diagnosis.router import (
     build_read_gateway,
 )
 from app.modules.testing.service import TestingService as DeviceTestingService
-from tests.conftest import API_AUTH_HEADERS
+from tests import oidc
 from tests.device.helpers import make_profile_graph
 
 
@@ -100,7 +100,7 @@ async def test_diagnosis_agent_executes_read_only_feedback_loop_and_persists_aud
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
-        headers=API_AUTH_HEADERS,
+        headers=oidc.auth_headers(),
     ) as client:
         created = await client.post(
             "/api/v1/diagnosis-runs",
@@ -150,7 +150,7 @@ async def test_diagnosis_run_rejects_unknown_target_point(db_session):
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
-        headers=API_AUTH_HEADERS,
+        headers=oidc.auth_headers(),
     ) as client:
         response = await client.post(
             "/api/v1/diagnosis-runs",

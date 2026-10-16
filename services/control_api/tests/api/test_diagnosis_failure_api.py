@@ -2,8 +2,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import create_app
 from app.modules.diagnosis.router import build_diagnosis_provider
+from tests import oidc
 from tests.api.test_diagnosis_api import _make_released_device
-from tests.conftest import API_AUTH_HEADERS
 
 
 class FailingProvider:
@@ -19,7 +19,7 @@ async def test_model_failure_is_persisted_as_queryable_run_state(db_session):
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
-        headers=API_AUTH_HEADERS,
+        headers=oidc.auth_headers(),
     ) as client:
         created = await client.post(
             "/api/v1/diagnosis-runs",

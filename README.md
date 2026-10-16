@@ -46,16 +46,30 @@ Requirements: Python 3.12 and a PostgreSQL instance (or
 
 ## API authentication
 
-Every `/api/v1` endpoint requires a bearer token from `DEVICE_API_TOKENS`
-(comma-separated, so a new token can be added before the old one is removed):
+The API sits behind a gateway (for example oauth2-proxy or a cloud
+identity-aware proxy) that signs callers in with an OIDC identity provider.
+People and services are both registered there. Every `/api/v1` request must
+carry the provider-signed JWT:
 
 ```bash
-curl -H "Authorization: Bearer $DEVICE_API_TOKEN" http://localhost:8000/api/v1/device-models
+curl -H "Authorization: Bearer $ID_TOKEN" http://localhost:8000/api/v1/device-models
 ```
 
-Missing or wrong tokens get `401`. If `DEVICE_API_TOKENS` is empty the API
-answers `503` rather than serving unauthenticated traffic. `/health` stays
-open, and the `/admin` console keeps its own login.
+The API verifies the token itself (signature against the provider's JWKS,
+`iss`, `aud`, `exp`) rather than trusting identity headers, so a request
+that bypasses the gateway cannot impersonate anyone. The caller identity
+(`email`, then `preferred_username`, `azp`, `client_id`, `sub`) is recorded
+as the actor in review audit events.
+
+| Variable | Purpose |
+| --- | --- |
+| `DEVICE_OIDC_ISSUER` | Expected `iss`, e.g. `https://idp.example.com/realms/device` |
+| `DEVICE_OIDC_AUDIENCE` | Expected `aud`, the client id registered for this API |
+| `DEVICE_OIDC_JWKS_URL` | Optional; discovered from the issuer when empty |
+
+Invalid or missing tokens get `401`. If the issuer or audience is not set the
+API answers `503` rather than serving unauthenticated traffic. `/health`
+stays open, and the `/admin` console keeps its own login.
 
 ## Development
 
