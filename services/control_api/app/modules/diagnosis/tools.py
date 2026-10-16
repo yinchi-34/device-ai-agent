@@ -14,7 +14,7 @@ from app.modules.document.providers import EmbeddingProvider, ProviderError
 from app.modules.document.retrieval import search_document_chunks
 from app.modules.testing import repository as testing_repository
 
-_DEFINITIONS = [
+DIAGNOSIS_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         "get_device_context",
         "Get safe device, released-profile, protocol, and redacted connection metadata.",
@@ -65,7 +65,67 @@ _DEFINITIONS = [
             "properties": {"read_step_sequence": {"type": "integer", "minimum": 1}},
         },
     ),
-]
+)
+_DEFINITIONS_BY_NAME = {
+    definition.name: definition for definition in DIAGNOSIS_TOOL_DEFINITIONS
+}
+
+
+def validate_tool_arguments(
+    name: str, arguments: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Return the invalid-arguments observation, or None when arguments are valid."""
+    errors = sorted(
+        Draft202012Validator(_DEFINITIONS_BY_NAME[name].parameters).iter_errors(
+            arguments
+        ),
+        key=lambda error: list(error.path),
+    )
+    if not errors:
+        return None
+    return {
+        "status": "invalid_tool_arguments",
+        "errors": [error.message for error in errors],
+    }
+
+
+def find_successful_read_step(
+    read_sequence: int, steps: Sequence[DiagnosisStep]
+) -> DiagnosisStep | dict[str, Any]:
+    """Resolve a decode reference to a prior successful read, or an error observation."""
+    read_step = next(
+        (step for step in steps if step.sequence_number == read_sequence), None
+    )
+    if read_step is None or read_step.tool_name != "read_point":
+        return {"status": "read_step_not_found"}
+    if read_step.result.get("status") != "success":
+        return {"status": "read_step_not_successful"}
+    return read_step
+
+
+def decode_point_words(
+    words: Any,
+    *,
+    point_code: str,
+    data_type: str,
+    address_spec: dict[str, Any],
+    scale: Any,
+    offset: Any,
+    expected_rule: dict[str, Any] | None,
+) -> dict[str, Any]:
+    try:
+        result = decode_register_words(
+            words,
+            data_type=data_type,
+            word_order=address_spec.get("word_order", "big"),
+            byte_order=address_spec.get("byte_order", "big"),
+            scale=scale,
+            offset=offset,
+            expected_rule=expected_rule,
+        )
+    except (DecodeError, KeyError, TypeError) as exc:
+        return {"status": "decode_error", "error": str(exc)}
+    return {"status": "success", "point_code": point_code, **result}
 
 
 class RuntimeDiagnosisToolbox:
@@ -81,24 +141,16 @@ class RuntimeDiagnosisToolbox:
         self.run = run
         self.read_gateway = read_gateway
         self.embedding_provider = embedding_provider
-        self._definitions = {definition.name: definition for definition in _DEFINITIONS}
 
     def definitions(self) -> Sequence[ToolDefinition]:
-        return list(self._definitions.values())
+        return list(DIAGNOSIS_TOOL_DEFINITIONS)
 
     async def execute(
         self, name: str, arguments: dict[str, Any], steps: Sequence[DiagnosisStep]
     ) -> dict[str, Any]:
-        definition = self._definitions[name]
-        errors = sorted(
-            Draft202012Validator(definition.parameters).iter_errors(arguments),
-            key=lambda error: list(error.path),
-        )
-        if errors:
-            return {
-                "status": "invalid_tool_arguments",
-                "errors": [error.message for error in errors],
-            }
+        invalid = validate_tool_arguments(name, arguments)
+        if invalid is not None:
+            return invalid
         handlers = {
             "get_device_context": self._get_device_context,
             "list_profile_points": self._list_profile_points,
@@ -170,6 +222,7 @@ class RuntimeDiagnosisToolbox:
                 {
                     "code": point.code,
                     "name": point.name,
+                    "protocol_spec_id": point.protocol_spec_id,
                     "address_text": point.address_text,
                     "data_type": point.data_type,
                     "access_mode": point.access_mode,
@@ -255,17 +308,12 @@ class RuntimeDiagnosisToolbox:
                 secret_ref=connection.secret_ref,
             )
         )
-        return _normalize_read_result(gateway_result, point.code, connection.id)
+        return normalize_read_result(gateway_result, point.code, connection.id)
 
     async def _decode_last_read(self, arguments, steps):
-        read_sequence = arguments["read_step_sequence"]
-        read_step = next(
-            (step for step in steps if step.sequence_number == read_sequence), None
-        )
-        if read_step is None or read_step.tool_name != "read_point":
-            return {"status": "read_step_not_found"}
-        if read_step.result.get("status") != "success":
-            return {"status": "read_step_not_successful"}
+        read_step = find_successful_read_step(arguments["read_step_sequence"], steps)
+        if isinstance(read_step, dict):
+            return read_step
         point_code = read_step.result.get("point_code")
         instance = await self._instance()
         points = await repository.list_profile_points(
@@ -274,19 +322,15 @@ class RuntimeDiagnosisToolbox:
         if not points:
             return {"status": "point_not_found"}
         point = points[0]
-        try:
-            result = decode_register_words(
-                read_step.result["raw_words"],
-                data_type=point.data_type,
-                word_order=point.address_spec.get("word_order", "big"),
-                byte_order=point.address_spec.get("byte_order", "big"),
-                scale=point.scale,
-                offset=point.offset,
-                expected_rule=point.expected_rule,
-            )
-        except (DecodeError, KeyError, TypeError) as exc:
-            return {"status": "decode_error", "error": str(exc)}
-        return {"status": "success", "point_code": point.code, **result}
+        return decode_point_words(
+            read_step.result.get("raw_words"),
+            point_code=point.code,
+            data_type=point.data_type,
+            address_spec=point.address_spec,
+            scale=point.scale,
+            offset=point.offset,
+            expected_rule=point.expected_rule,
+        )
 
 
 def repeated_read_policy_error(
@@ -326,7 +370,7 @@ def _redact_connection_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_read_result(
+def normalize_read_result(
     result: dict[str, Any], point_code: str, connection_id: int
 ) -> dict[str, Any]:
     allowed_statuses = {

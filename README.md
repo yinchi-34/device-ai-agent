@@ -158,15 +158,57 @@ step limit, per-run PostgreSQL advisory lock, and per-step commits prevent
 duplicate execution and preserve the latest completed step after a process
 failure. Terminal reports must cite at least one persisted evidence step.
 
+### Diagnosis evaluation
+
 Versioned diagnosis evaluation cases live in
-`services/control_api/evals/diagnosis/cases.json`. Run repeated live-model
-evaluation from `services/control_api`:
+`services/control_api/evals/diagnosis/cases.json`. The 19 cases cover transport,
+protocol, encoding, semantic and healthy outcomes, escalation scenarios
+(conflicting manuals, required writes, unavailable gateway, write-only target),
+and prompt-injection attempts in the symptom and in manual excerpts.
+
+Cases replay recorded tool observations, but behind the runtime tool schemas and
+policies: arguments are validated with the real JSON Schemas, unknown points,
+write-only points and unknown connections are rejected, repeated deterministic
+reads are blocked, read results are normalized, and `decode_last_read` decodes
+with the case's released point configuration. `read_outcomes_by_point` scripts
+per-point gateway outcomes in order.
+
+Every case carries `reference_decisions`, a known-good trajectory. `pytest`
+replays all of them offline, so a broken fixture or a policy change that makes a
+case unsolvable fails the test suite without a live model.
+
+Run repeated live-model evaluation from `services/control_api`:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/run_diagnosis_evals.py --trials 3
+.\.venv\Scripts\python.exe scripts/run_diagnosis_evals.py --trials 3 --min-pass-rate 0.9
 ```
 
-The report includes classification accuracy, handoff/escalation rate,
-dangerous-action rate, total tokens, average latency, and average step count.
+Use `--case <id>` (repeatable) to run selected cases and `--output report.json`
+to keep the report. The report includes pass rate, per-case pass rate,
+classification accuracy overall and per label, escalation rate,
+dangerous-action rate (any tool outside the read-only allowlist), the share of
+runs with invalid tool arguments, total tokens, average latency and average
+step count. Each run lists `failure_reasons`. The script exits non-zero when any
+run requests a disallowed tool or the pass rate is below `--min-pass-rate`.
 The dataset pins the system Prompt SHA-256 so Prompt changes require an
 explicit baseline review.
+
+### Reviewer feedback
+
+Reviewers label finished (`completed` or `escalated`) runs:
+
+- `POST /api/v1/diagnosis-runs/{run_id}/feedback` with `verdict`
+  (`correct` or `incorrect`), `reviewer`, optional `note`, and, for an
+  incorrect verdict, `expected_status` plus `expected_classification` when the
+  expected status is `completed`.
+- `GET /api/v1/diagnosis-runs/{run_id}/feedback`
+- `GET /api/v1/diagnosis-runs/{run_id}/evaluation-case` returns the run frozen
+  into an evaluation case labelled by its latest feedback. Confirmed runs keep
+  their trajectory as `reference_decisions`; corrected runs have none.
+
+To collect every labelled run into a dataset and evaluate the model on it:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/export_diagnosis_feedback_cases.py --output evals/diagnosis/feedback_cases.json
+.\.venv\Scripts\python.exe scripts/run_diagnosis_evals.py --dataset evals/diagnosis/feedback_cases.json
+```

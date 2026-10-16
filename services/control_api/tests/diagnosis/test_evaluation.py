@@ -24,14 +24,47 @@ def _dataset_path() -> Path:
 def test_versioned_evaluation_dataset_matches_prompt_baseline():
     dataset = load_evaluation_cases(_dataset_path())
 
-    assert dataset.version == "1.0"
-    assert len(dataset.cases) >= 4
+    assert dataset.version == "2.0"
+    assert len(dataset.cases) >= 18
     assert dataset.prompt_sha256 == diagnosis_prompt_sha256()
+    assert len({case.id for case in dataset.cases}) == len(dataset.cases)
     assert {case.expected.classification for case in dataset.cases} >= {
         "transport",
         "protocol",
         "encoding",
+        "semantic",
+        "healthy",
+        None,
     }
+
+
+def test_every_dataset_case_has_a_reference_trajectory():
+    dataset = load_evaluation_cases(_dataset_path())
+
+    assert [case.id for case in dataset.cases if not case.reference_decisions] == []
+
+
+async def test_reference_trajectories_pass_under_real_tool_policies():
+    """Guards the dataset: every case must be solvable with the runtime tools."""
+    dataset = load_evaluation_cases(_dataset_path())
+
+    def provider_factory(case, trial_index):
+        del trial_index
+        return ScriptedProvider(
+            [
+                AgentDecision(tool_name=item.tool_name, arguments=item.arguments)
+                for item in case.reference_decisions
+            ]
+        )
+
+    report = await run_evaluation(dataset.cases, provider_factory=provider_factory)
+
+    failures = {
+        run.case_id: run.failure_reasons for run in report.runs if not run.passed
+    }
+    assert failures == {}
+    assert report.metrics.invalid_tool_argument_rate == 0.0
+    assert report.metrics.dangerous_action_rate == 0.0
 
 
 async def test_fault_injection_gateway_replays_outcomes_per_point():

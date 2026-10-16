@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.device.models import DevicePoint, DeviceProtocolSpec
-from app.modules.diagnosis.models import DiagnosisRun
+from app.modules.diagnosis.models import DiagnosisFeedback, DiagnosisRun
 from app.modules.testing.models import DeviceConnection
 
 
@@ -49,3 +49,23 @@ async def get_device_connection(
         DeviceConnection.is_deleted.is_(False),
     )
     return await session.scalar(statement)
+
+
+async def list_feedback(
+    session: AsyncSession, run_id: int
+) -> Sequence[DiagnosisFeedback]:
+    statement = (
+        select(DiagnosisFeedback)
+        .where(DiagnosisFeedback.diagnosis_run_id == run_id)
+        .order_by(DiagnosisFeedback.created_at, DiagnosisFeedback.id)
+    )
+    return (await session.scalars(statement)).all()
+
+
+async def list_run_ids_with_feedback(session: AsyncSession) -> Sequence[int]:
+    statement = (
+        select(DiagnosisFeedback.diagnosis_run_id)
+        .distinct()
+        .order_by(DiagnosisFeedback.diagnosis_run_id)
+    )
+    return (await session.scalars(statement)).all()

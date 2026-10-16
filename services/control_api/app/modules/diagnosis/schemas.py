@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,3 +43,29 @@ class DiagnosisRunOut(BaseModel):
     finished_at: datetime | None
     created_at: datetime
     steps: list[DiagnosisStepOut]
+
+
+DiagnosisClassification = Literal[
+    "transport", "protocol", "encoding", "semantic", "healthy", "unknown"
+]
+
+
+class DiagnosisFeedbackCreate(BaseModel):
+    verdict: Literal["correct", "incorrect"]
+    expected_status: Literal["completed", "escalated"] | None = None
+    expected_classification: DiagnosisClassification | None = None
+    reviewer: str = Field(min_length=1, max_length=255)
+    note: str | None = Field(default=None, max_length=4000)
+
+
+class DiagnosisFeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    diagnosis_run_id: int
+    verdict: str
+    expected_status: str
+    expected_classification: str | None
+    reviewer: str
+    note: str | None
+    created_at: datetime
