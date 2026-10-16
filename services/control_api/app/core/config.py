@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     document_vision_api_key: str = ""
     document_vision_model: str = ""
     document_vision_timeout_seconds: float = 120
+    document_vision_max_output_tokens: int = 8192
+    document_ocr_concurrency: int = 4
+    document_ocr_page_max_attempts: int = 3
+    document_ocr_retry_base_delay_seconds: float = 1.0
+    document_ocr_render_scale: float = 2.0
+    document_ocr_max_image_side_px: int = 2500
 
     document_embedding_base_url: str = "https://api.openai.com/v1"
     document_embedding_api_key: str = ""

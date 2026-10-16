@@ -27,6 +27,8 @@ from app.modules.document.models import (
     ProfileExtractionRun,
 )
 from app.modules.document.parsers import (
+    PageCache,
+    PdfParseOptions,
     Pypdfium2PageRenderer,
     parse_docx,
     parse_pdf,
@@ -450,6 +452,8 @@ async def _execute_extraction_run_locked(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    pdf_options: PdfParseOptions | None = None,
+    page_cache: PageCache | None = None,
 ) -> ProfileExtractionRun:
     statement = (
         select(ProfileExtractionRun)
@@ -500,6 +504,9 @@ async def _execute_extraction_run_locked(
                     renderer=renderer or Pypdfium2PageRenderer(),
                     vision=vision_provider,
                     min_text_chars=min_text_chars,
+                    options=pdf_options,
+                    cache=page_cache,
+                    file_hash=document.file_hash_sha256,
                 )
             else:
                 parsed = parse_docx(path)
@@ -593,6 +600,8 @@ async def execute_extraction_run(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    pdf_options: PdfParseOptions | None = None,
+    page_cache: PageCache | None = None,
 ) -> ProfileExtractionRun:
     lock_connection = await _try_acquire_run_lock(session, run_id)
     if lock_connection is None:
@@ -611,6 +620,8 @@ async def execute_extraction_run(
             renderer=renderer,
             min_text_chars=min_text_chars,
             extraction_group_max_tokens=extraction_group_max_tokens,
+            pdf_options=pdf_options,
+            page_cache=page_cache,
         )
     finally:
         await _release_run_lock(lock_connection, run_id)
