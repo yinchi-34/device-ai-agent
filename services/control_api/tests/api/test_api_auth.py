@@ -87,3 +87,15 @@ async def test_health_does_not_require_token(api_tokens, bare_client):
     response = await bare_client.get("/health")
 
     assert response.status_code == 200
+
+
+async def test_openapi_declares_bearer_security(bare_client):
+    schema = (await bare_client.get("/openapi.json")).json()
+
+    assert schema["components"]["securitySchemes"]["HTTPBearer"] == {
+        "type": "http",
+        "scheme": "bearer",
+    }
+    device_models = schema["paths"]["/api/v1/device-models"]["get"]
+    assert device_models["security"] == [{"HTTPBearer": []}]
+    assert "security" not in schema["paths"]["/health"]["get"]

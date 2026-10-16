@@ -1,6 +1,7 @@
 import secrets
 
-from fastapi import Request
+from fastapi import Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings
 from app.core.errors import DomainError
@@ -10,14 +11,13 @@ def _configured_tokens(settings: Settings) -> list[str]:
     return [token.strip() for token in settings.api_tokens.split(",") if token.strip()]
 
 
-def _bearer_token(request: Request) -> str | None:
-    scheme, _, credentials = request.headers.get("Authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not credentials.strip():
-        return None
-    return credentials.strip()
+# auto_error=False keeps our own 401/503 bodies; the scheme still appears in OpenAPI.
+_bearer = HTTPBearer(auto_error=False)
 
 
-async def require_api_token(request: Request) -> None:
+async def require_api_token(
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> None:
     """Reject /api/v1 requests without a configured bearer token.
 
     Fails closed: when no tokens are configured the API answers 503
@@ -30,11 +30,11 @@ async def require_api_token(request: Request) -> None:
             "API authentication is not configured",
             status_code=503,
         )
-    presented = _bearer_token(request)
+    presented = credentials.credentials.strip() if credentials else None
     # Compare against every token so timing does not reveal which one matched.
     matched = False
     for token in tokens:
-        if presented is not None and secrets.compare_digest(
+        if presented and secrets.compare_digest(
             presented.encode(), token.encode()
         ):
             matched = True
