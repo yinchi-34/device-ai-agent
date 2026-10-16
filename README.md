@@ -178,7 +178,8 @@ human-reviewable device profile candidates:
 2. **Parse**: deterministic PDF/DOCX parsing plus scanned-page OCR produce
    stable evidence references (block and page).
 3. **Extract**: the worker groups content and asks the extraction model for a
-   candidate profile; each field cites its evidence.
+   candidate profile; sourced fields (such as model identity, capabilities,
+   and point bindings) carry evidence references.
 4. **Review**: candidates require schema/domain validation and explicit human
    approval.
 5. **Import**: approved imports are transactional and idempotent and create
