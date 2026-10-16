@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.db.session import get_db_session
 from app.modules.diagnosis import schemas
+from app.modules.diagnosis.evaluation import EvaluationCase
+from app.modules.diagnosis.feedback import DiagnosisFeedbackService
 from app.modules.diagnosis.gateway import (
     HttpReadOnlyRegisterGateway,
     UnavailableReadGateway,
@@ -85,3 +87,39 @@ async def execute_diagnosis_run(
     )
     await session.commit()
     return run
+
+
+@router.post(
+    "/diagnosis-runs/{run_id}/feedback",
+    status_code=201,
+    response_model=schemas.DiagnosisFeedbackOut,
+)
+async def create_diagnosis_feedback(
+    run_id: int,
+    payload: schemas.DiagnosisFeedbackCreate,
+    session: AsyncSession = Depends(get_db_session),
+) -> object:
+    feedback = await DiagnosisFeedbackService(session).add_feedback(
+        run_id, **payload.model_dump()
+    )
+    await session.commit()
+    return feedback
+
+
+@router.get(
+    "/diagnosis-runs/{run_id}/feedback",
+    response_model=list[schemas.DiagnosisFeedbackOut],
+)
+async def list_diagnosis_feedback(
+    run_id: int, session: AsyncSession = Depends(get_db_session)
+) -> object:
+    return await DiagnosisFeedbackService(session).list_feedback(run_id)
+
+
+@router.get(
+    "/diagnosis-runs/{run_id}/evaluation-case", response_model=EvaluationCase
+)
+async def export_diagnosis_evaluation_case(
+    run_id: int, session: AsyncSession = Depends(get_db_session)
+) -> object:
+    return await DiagnosisFeedbackService(session).evaluation_case(run_id)

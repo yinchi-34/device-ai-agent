@@ -85,3 +85,24 @@ class DiagnosisStep(IdentityMixin, Base):
     )
 
     run: Mapped[DiagnosisRun] = relationship(back_populates="steps")
+
+
+class DiagnosisFeedback(IdentityMixin, Base):
+    """A reviewer's verdict on a finished run; the label for its evaluation case."""
+
+    __tablename__ = "diagnosis_feedback"
+    __table_args__ = (
+        Index("ix_diagnosis_feedback_run_created", "diagnosis_run_id", "created_at"),
+    )
+
+    diagnosis_run_id: Mapped[int] = mapped_column(
+        ForeignKey("diagnosis_run.id", ondelete="CASCADE"), nullable=False
+    )
+    verdict: Mapped[str] = mapped_column(String(32), nullable=False)
+    expected_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    expected_classification: Mapped[str | None] = mapped_column(String(32))
+    reviewer: Mapped[str] = mapped_column(String(255), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

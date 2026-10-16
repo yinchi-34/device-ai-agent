@@ -161,7 +161,7 @@ class ScenarioToolbox:
             return invalid
         if name == "read_point":
             return await self._read_point(arguments, steps)
-        if name == "decode_last_read" and "decode_last_read" not in self.tool_results:
+        if name == "decode_last_read":
             return self._decode_last_read(arguments, steps)
         return self._next_fixture(name)
 
@@ -240,6 +240,8 @@ class ScenarioToolbox:
         read_step = find_successful_read_step(arguments["read_step_sequence"], steps)
         if isinstance(read_step, dict):
             return read_step
+        if "decode_last_read" in self.tool_results:
+            return self._next_fixture("decode_last_read")
         point_code = read_step.result.get("point_code")
         point = self._points.get(point_code)
         if point is None or "data_type" not in point:
