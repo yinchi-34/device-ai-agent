@@ -1,5 +1,7 @@
 # Device AI Agent
 
+English | [简体中文](README.zh-CN.md)
+
 A backend platform for industrial device definitions, manual-driven profile
 extraction, and read-only AI-assisted diagnosis.
 
