@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
@@ -126,17 +126,44 @@ async def search_document_chunks(
     distance = DocumentChunkEmbedding.embedding.cosine_distance(query_vector).label(
         "distance"
     )
+    embedding_matches = (
+        DocumentChunkEmbedding.provider == result.provider,
+        DocumentChunkEmbedding.model == result.model,
+        DocumentChunkEmbedding.dimension == result.dimension,
+    )
+    # Every extraction run (including retries) re-chunks the whole document, so
+    # searching all runs returns the same passage once per run. Search only the
+    # newest run per document that has finished embedding with this model; a
+    # newer run that is still parsing does not hide the document meanwhile.
+    latest_runs = (
+        select(
+            DocumentChunk.source_document_id.label("source_document_id"),
+            func.max(DocumentChunk.extraction_run_id).label("extraction_run_id"),
+        )
+        .join(
+            DocumentChunkEmbedding,
+            DocumentChunkEmbedding.document_chunk_id == DocumentChunk.id,
+        )
+        .where(*embedding_matches)
+        .group_by(DocumentChunk.source_document_id)
+        .subquery()
+    )
     statement = (
         select(DocumentChunk, distance)
         .join(
             DocumentChunkEmbedding,
             DocumentChunkEmbedding.document_chunk_id == DocumentChunk.id,
         )
+        .join(
+            latest_runs,
+            and_(
+                latest_runs.c.source_document_id == DocumentChunk.source_document_id,
+                latest_runs.c.extraction_run_id == DocumentChunk.extraction_run_id,
+            ),
+        )
         .join(SourceDocument, SourceDocument.id == DocumentChunk.source_document_id)
         .where(
-            DocumentChunkEmbedding.provider == result.provider,
-            DocumentChunkEmbedding.model == result.model,
-            DocumentChunkEmbedding.dimension == result.dimension,
+            *embedding_matches,
             SourceDocument.is_deleted.is_(False),
         )
     )

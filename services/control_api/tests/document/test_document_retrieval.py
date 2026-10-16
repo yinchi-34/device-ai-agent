@@ -193,3 +193,83 @@ async def test_embed_run_chunks_skips_chunks_with_existing_embeddings(db_session
 
     assert provider.calls == []
     assert len(embeddings) == 1
+
+
+async def _add_run_with_chunk(db_session, document, *, content, embed, status):
+    run = ProfileExtractionRun(
+        source_document_id=document.id,
+        status=status,
+        extraction_provider="fake",
+        extraction_model="extract-v1",
+        embedding_provider="fake",
+        embedding_model="embed-v1",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    chunk = DocumentChunk(
+        source_document_id=document.id,
+        extraction_run_id=run.id,
+        stable_ref="pdf:page:1:block:1",
+        content_type="text",
+        content=content,
+        page_number=1,
+        block_index=1,
+        extraction_method="pdf_text",
+        content_hash="c" * 64,
+        token_count=4,
+    )
+    db_session.add(chunk)
+    await db_session.flush()
+    if embed:
+        db_session.add(
+            DocumentChunkEmbedding(
+                document_chunk_id=chunk.id,
+                provider="fake",
+                model="embed-v1",
+                dimension=3,
+                embedding=[1.0, 0.0, 0.0],
+            )
+        )
+        await db_session.flush()
+    return run
+
+
+async def test_search_uses_only_latest_embedded_run_per_document(db_session):
+    document = await make_document_with_chunk(
+        db_session,
+        stable_ref="pdf:page:1:block:1",
+        content="filter pressure alarm",
+        vector=[1.0, 0.0, 0.0],
+    )
+    retried = await _add_run_with_chunk(
+        db_session,
+        document,
+        content="filter pressure alarm",
+        embed=True,
+        status="awaiting_review",
+    )
+    # A newer run that has not been embedded yet must not hide the document.
+    await _add_run_with_chunk(
+        db_session,
+        document,
+        content="filter pressure alarm",
+        embed=False,
+        status="parsing",
+    )
+
+    results = await search_document_chunks(
+        db_session,
+        query="filter pressure",
+        source_document_id=document.id,
+        device_model_id=None,
+        provider=embedding_provider([1.0, 0.0, 0.0]),
+        limit=5,
+    )
+
+    assert len(results) == 1
+    chunk_run_id = await db_session.scalar(
+        select(DocumentChunk.extraction_run_id).where(
+            DocumentChunk.id == results[0].chunk_id
+        )
+    )
+    assert chunk_run_id == retried.id
