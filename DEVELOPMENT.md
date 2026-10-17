@@ -333,6 +333,41 @@ dangerous-action rate, total tokens, average latency, and average step count.
 The dataset pins the system prompt SHA-256, so prompt changes require an
 explicit baseline review.
 
+#### Retrieval evaluation
+
+Manual retrieval (the RAG path behind the diagnosis agent's `search_manual`
+tool) has its own dataset in
+[`services/control_api/evals/retrieval/`](services/control_api/evals/retrieval/):
+three fixture manuals (an AHU PDF, a VFD DOCX with parameter and fault tables,
+and a chiller PDF under a different device model that reuses the AHU's alarm
+codes) and labelled cases grouped by category (`exact_code`, `table_lookup`,
+`troubleshooting`, `spec`, `procedure`, `scope_conflict`).
+
+The harness runs the production path: the real parsers and `build_chunks`,
+`embed_run_chunks`, then `search_document_chunks` scoped to a device model.
+Relevance is judged by content: a retrieved chunk is relevant when it contains
+every term of one of the case's evidence items, ignoring whitespace, so labels
+stay valid when chunking changes. Everything runs in one transaction that is
+always rolled back.
+
+```bash
+# Deterministic, network-free baseline (hashed n-gram embedding)
+python scripts/run_retrieval_evals.py
+
+# The embedding model configured in DEVICE_DOCUMENT_EMBEDDING_*
+python scripts/run_retrieval_evals.py --embedding configured --json report.json
+```
+
+The report gives hit@1/3/k, MRR, evidence recall@k, mean context characters
+returned at k (what the agent pays for), duplicate rate, and out-of-scope
+results, overall and per category. A second `after_retry` scenario re-ingests
+each manual as a retried extraction run to measure duplicates across runs.
+The offline embedding approximates a lexical retriever; use it for regression
+checks, and the configured model for quality numbers.
+
+`evals/retrieval/build_fixtures.py` regenerates the fixture manuals; the
+dataset validity test checks that every label still appears in its manual.
+
 ## Testing
 
 Tests need a PostgreSQL database whose name ends in `_test`; pytest refuses to
@@ -404,7 +439,8 @@ service anywhere else:
     │       └── diagnosis/      # read-only agent, tools, gateway, evals
     ├── alembic/                # database migrations
     ├── evals/diagnosis/        # versioned diagnosis eval cases
-    ├── scripts/                # run_diagnosis_evals.py
+    ├── evals/retrieval/        # retrieval eval manuals and cases
+    ├── scripts/                # run_diagnosis_evals.py, run_retrieval_evals.py
     ├── tests/
     ├── Dockerfile
     └── pyproject.toml
