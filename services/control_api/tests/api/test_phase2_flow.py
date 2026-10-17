@@ -224,27 +224,7 @@ async def test_complete_phase2_business_flow(client, db_session, tmp_path, monke
 
 
 def test_compose_declares_phase2_runtime():
-    project_root = Path(__file__).parents[4]
-    compose_environment = os.environ | {
-        "DEVICE_DATABASE_PASSWORD": "compose-test-password",
-        "DEVICE_OIDC_ISSUER": "https://idp.test/realms/device",
-        "DEVICE_OIDC_AUDIENCE": "device-control-api",
-        "DEVICE_OIDC_LOGIN_URL": "https://idp.test/auth",
-        "DEVICE_OIDC_TOKEN_URL": "https://idp.test/token",
-        "DEVICE_OIDC_JWKS_URL": "https://idp.test/certs",
-        "DEVICE_GATEWAY_CLIENT_SECRET": "gateway-secret",
-        "DEVICE_GATEWAY_COOKIE_SECRET": "x" * 32,
-    }
-    result = subprocess.run(
-        ["docker", "compose", "config", "--format", "json"],
-        cwd=project_root,
-        env=compose_environment,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    config = json.loads(result.stdout)
+    config = _compose_config()
     assert (
         config["services"]["db"]["environment"]["POSTGRES_PASSWORD"]
         == "compose-test-password"
@@ -273,8 +253,50 @@ def test_compose_declares_phase2_runtime():
     # The local identity provider never starts unless its profile is enabled.
     assert "keycloak" not in config["services"]
 
+    # Production basics: database data survives container recreation, services
+    # come back after a reboot, and container logs are rotated.
+    assert any(
+        mount["source"] == "db-data"
+        and mount["target"] == "/var/lib/postgresql/data"
+        for mount in config["services"]["db"]["volumes"]
+    )
+    for service_name, service in config["services"].items():
+        assert service["restart"] == "unless-stopped", service_name
+        assert service["logging"]["options"]["max-size"], service_name
+
     for service_name in ("control-api", "document-worker"):
         database_url = config["services"][service_name]["environment"][
             "DEVICE_DATABASE_URL"
         ]
         assert "compose-test-password" in database_url
+
+
+def test_compose_gateway_bind_address_is_configurable():
+    config = _compose_config(DEVICE_GATEWAY_BIND="10.0.1.15")
+
+    ports = config["services"]["gateway"]["ports"]
+    assert [port["host_ip"] for port in ports] == ["10.0.1.15"]
+
+
+def _compose_config(**overrides: str) -> dict:
+    project_root = Path(__file__).parents[4]
+    compose_environment = os.environ | {
+        "DEVICE_DATABASE_PASSWORD": "compose-test-password",
+        "DEVICE_OIDC_ISSUER": "https://idp.test/realms/device",
+        "DEVICE_OIDC_AUDIENCE": "device-control-api",
+        "DEVICE_OIDC_LOGIN_URL": "https://idp.test/auth",
+        "DEVICE_OIDC_TOKEN_URL": "https://idp.test/token",
+        "DEVICE_OIDC_JWKS_URL": "https://idp.test/certs",
+        "DEVICE_GATEWAY_CLIENT_SECRET": "gateway-secret",
+        "DEVICE_GATEWAY_COOKIE_SECRET": "x" * 32,
+        **overrides,
+    }
+    result = subprocess.run(
+        ["docker", "compose", "config", "--format", "json"],
+        cwd=project_root,
+        env=compose_environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(result.stdout)
