@@ -226,7 +226,14 @@ async def test_complete_phase2_business_flow(client, db_session, tmp_path, monke
 def test_compose_declares_phase2_runtime():
     project_root = Path(__file__).parents[4]
     compose_environment = os.environ | {
-        "DEVICE_DATABASE_PASSWORD": "compose-test-password"
+        "DEVICE_DATABASE_PASSWORD": "compose-test-password",
+        "DEVICE_OIDC_ISSUER": "https://idp.test/realms/device",
+        "DEVICE_OIDC_AUDIENCE": "device-control-api",
+        "DEVICE_OIDC_LOGIN_URL": "https://idp.test/auth",
+        "DEVICE_OIDC_TOKEN_URL": "https://idp.test/token",
+        "DEVICE_OIDC_JWKS_URL": "https://idp.test/certs",
+        "DEVICE_GATEWAY_CLIENT_SECRET": "gateway-secret",
+        "DEVICE_GATEWAY_COOKIE_SECRET": "x" * 32,
     }
     result = subprocess.run(
         ["docker", "compose", "config", "--format", "json"],
@@ -254,12 +261,17 @@ def test_compose_declares_phase2_runtime():
             for mount in mounts
         )
 
-    for service_name, target_port in (("db", 5432), ("control-api", 8000)):
+    for service_name, target_port in (("db", 5432), ("gateway", 80)):
         published_ports = config["services"][service_name]["ports"]
         assert any(
             port["host_ip"] == "127.0.0.1" and port["target"] == target_port
             for port in published_ports
         )
+    # The API is reachable only through the gateway.
+    assert "ports" not in config["services"]["control-api"]
+    assert "ports" not in config["services"]["oauth2-proxy"]
+    # The local identity provider never starts unless its profile is enabled.
+    assert "keycloak" not in config["services"]
 
     for service_name in ("control-api", "document-worker"):
         database_url = config["services"][service_name]["environment"][

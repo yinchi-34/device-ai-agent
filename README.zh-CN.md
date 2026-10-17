@@ -75,25 +75,37 @@ docker compose exec control-api alembic upgrade head
 
 打开：
 
-- API 文档：<http://127.0.0.1:8000/docs>
-- 审核台：<http://127.0.0.1:8000/admin/documents>
+- API 文档：<http://localhost:8000/docs>
+- 审核台：<http://localhost:8000/admin/documents>
+
+页面会跳转到身份提供方登录；本地 Keycloak 的测试账号是 `reviewer` / `reviewer`。
 
 ### 试一试
+
+所有 `/api/v1` 调用都需要身份提供方签发的 token。使用本地 Keycloak 时，
+示例程序客户端这样获取：
+
+```bash
+TOKEN=$(curl -s -d grant_type=client_credentials -d client_id=device-cli \
+  -d client_secret=local-dev-cli-secret \
+  http://localhost:8180/realms/device/protocol/openid-connect/token \
+  | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
+```
 
 上传一份说明书并开始抽取：
 
 ```bash
-curl -F file=@manual.pdf -F device_model_id=1 http://127.0.0.1:8000/api/v1/documents
-curl -X POST http://127.0.0.1:8000/api/v1/documents/1/extraction-runs
+curl -H "Authorization: Bearer $TOKEN" -F file=@manual.pdf -F device_model_id=1 http://localhost:8000/api/v1/documents
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/documents/1/extraction-runs
 ```
 
 在审核台中审核并导入候选。Profile 发布、设备实例创建好之后，发起一次诊断：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs \
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diagnosis-runs \
   -H 'Content-Type: application/json' \
   -d '{"device_id": 1, "symptom": "送风温度持续升高"}'
-curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs/1/execute
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diagnosis-runs/1/execute
 ```
 
 ## 文档
@@ -106,7 +118,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs/1/execute
 - [x] 阶段 1：设备目录、能力模型、命令生成
 - [x] 阶段 2：文档智能与人工审核台
 - [x] 阶段 3：只读诊断 Agent 与评测工具
-- [ ] 生产化：API 认证、CI、部署指南
+- [x] API 认证：OIDC 身份提供方、Caddy + oauth2-proxy 网关、应用校验 JWT
+- [ ] 生产化：CI、部署指南
 
 ## 安全
 
