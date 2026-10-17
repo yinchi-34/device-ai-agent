@@ -9,6 +9,11 @@ from app.modules.document.openai_compatible import (
     OpenAICompatibleExtractionProvider,
     OpenAICompatibleVisionProvider,
 )
+from app.modules.document.parsers import (
+    FileSystemPageCache,
+    PdfParseOptions,
+    Pypdfium2PageRenderer,
+)
 from app.modules.document.providers import ProviderError
 from app.modules.document.storage import FileSystemDocumentStorage
 
@@ -37,6 +42,7 @@ async def _execute(run_id: int) -> None:
                     api_key=settings.document_vision_api_key,
                     model=settings.document_vision_model,
                     timeout_seconds=settings.document_vision_timeout_seconds,
+                    max_output_tokens=settings.document_vision_max_output_tokens,
                 ),
                 embedding_provider=OpenAICompatibleEmbeddingProvider(
                     base_url=settings.document_embedding_base_url,
@@ -44,9 +50,23 @@ async def _execute(run_id: int) -> None:
                     model=settings.document_embedding_model,
                     timeout_seconds=settings.document_embedding_timeout_seconds,
                 ),
+                renderer=Pypdfium2PageRenderer(
+                    scale=settings.document_ocr_render_scale,
+                    max_image_side_px=settings.document_ocr_max_image_side_px,
+                ),
                 min_text_chars=settings.document_min_text_chars_per_page,
                 extraction_group_max_tokens=(
                     settings.document_extraction_group_max_tokens
+                ),
+                pdf_options=PdfParseOptions(
+                    ocr_concurrency=settings.document_ocr_concurrency,
+                    page_max_attempts=settings.document_ocr_page_max_attempts,
+                    retry_base_delay_seconds=(
+                        settings.document_ocr_retry_base_delay_seconds
+                    ),
+                ),
+                page_cache=FileSystemPageCache(
+                    settings.document_storage_root / "page-cache"
                 ),
             )
         except ProviderError as exc:

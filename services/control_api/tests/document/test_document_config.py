@@ -14,6 +14,10 @@ def test_document_settings_have_safe_defaults():
     assert settings.document_llm_timeout_seconds == 600
     assert settings.document_llm_max_output_tokens == 8192
     assert settings.document_extraction_group_max_tokens == 2000
+    assert settings.document_vision_max_output_tokens == 8192
+    assert settings.document_ocr_concurrency == 4
+    assert settings.document_ocr_page_max_attempts == 3
+    assert settings.document_ocr_max_image_side_px == 2500
 
 
 def test_provider_credentials_are_independent(monkeypatch):
