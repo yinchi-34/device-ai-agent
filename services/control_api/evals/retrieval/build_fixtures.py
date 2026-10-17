@@ -121,9 +121,6 @@ AHU_200_PAGES = [
         [
             "A01 送风温度传感器故障：传感器开路或短路，读数超出 -40 至 120℃。",
             "A02 回风温度传感器故障：传感器开路或短路。",
-            "A05 过滤器压差高：初效或中效过滤器压差超过 250 Pa，需检查过滤器是否堵塞。",
-            "A07 防冻保护动作：表冷器出风温度低于 5℃，机组已停止送风机。",
-            "A09 送风机过载：热继电器动作或变频器报故障，需现场复位。",
             "A03 新风温度传感器故障：传感器开路或短路。",
             "A04 湿度传感器故障：读数超出 0 至 100%RH。",
             "A05 过滤器压差高：初效或中效过滤器压差超过 250 Pa，需检查过滤器是否堵塞。",
@@ -326,7 +323,16 @@ def build_docx(path: Path, blocks) -> None:
     document.save(str(path))
 
 
+def _assert_no_repeated_lines() -> None:
+    for name, pages in [("AHU-200", AHU_200_PAGES), ("CX-500", CX_500_PAGES)]:
+        lines = [line for _, paragraphs in pages for line in paragraphs]
+        repeated = {line for line in lines if lines.count(line) > 1}
+        if repeated:
+            raise SystemExit(f"{name} manual repeats lines: {sorted(repeated)}")
+
+
 def main() -> None:
+    _assert_no_repeated_lines()
     FIXTURES.mkdir(exist_ok=True)
     build_pdf(FIXTURES / "ahu_200_manual.pdf", AHU_200_PAGES)
     build_pdf(FIXTURES / "cx_500_manual.pdf", CX_500_PAGES)
