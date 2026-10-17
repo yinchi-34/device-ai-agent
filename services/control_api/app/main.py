@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.core.auth import require_identity
 from app.core.errors import DomainError
 from app.modules.device.router import router as device_router
 from app.modules.diagnosis.router import router as diagnosis_router
@@ -30,18 +31,20 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"code": exc.code, "message": exc.message},
+            headers=exc.headers,
         )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(device_router)
+    api_auth = [Depends(require_identity)]
+    app.include_router(device_router, dependencies=api_auth)
     app.include_router(admin_auth_router)
     app.include_router(document_admin_router)
-    app.include_router(document_router)
-    app.include_router(testing_router)
-    app.include_router(diagnosis_router)
+    app.include_router(document_router, dependencies=api_auth)
+    app.include_router(testing_router, dependencies=api_auth)
+    app.include_router(diagnosis_router, dependencies=api_auth)
     return app
 
 

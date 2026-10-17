@@ -19,6 +19,7 @@ Celery worker 负责文档处理。项目分为三个阶段：
 - [快速开始（Docker）](#快速开始docker)
 - [本地开发](#本地开发)
 - [配置](#配置)
+- [认证与网关](#认证与网关)
 - [API 概览](#api-概览)
 - [阶段 1：设备目录与能力模型](#阶段-1设备目录与能力模型)
 - [阶段 2：文档智能](#阶段-2文档智能)
@@ -59,7 +60,8 @@ pytest + pytest-asyncio、Ruff。
 
 ```bash
 cp .env.example .env
-# 编辑 .env：设置 DEVICE_DATABASE_PASSWORD 和 DEVICE_ADMIN_PASSWORD，
+# 编辑 .env：设置 DEVICE_DATABASE_PASSWORD 和 DEVICE_ADMIN_PASSWORD（身份和网关的
+# 默认值配合本地 Keycloak 可以直接使用），
 # 以及需要用到的 DEVICE_DOCUMENT_* / DEVICE_DIAGNOSIS_* 模型服务配置
 
 docker compose up --build -d
@@ -68,14 +70,15 @@ docker compose exec control-api alembic upgrade head
 
 启动后检查：
 
-- 健康检查：<http://127.0.0.1:8000/health> → `{"status": "ok"}`
-- 交互式 API 文档（Swagger UI）：<http://127.0.0.1:8000/docs>
-- 管理审核台：<http://127.0.0.1:8000/admin/documents>
+- 健康检查：<http://localhost:8000/health> → `{"status": "ok"}`
+- 交互式 API 文档（Swagger UI）：<http://localhost:8000/docs>
+- 管理审核台：<http://localhost:8000/admin/documents>
 
-Compose 会启动四个服务：`db`（pgvector/pgvector:pg16）、`redis`、`control-api`
-和 `document-worker`。API 和数据库端口只绑定在 `127.0.0.1`（API 使用
-`DEVICE_API_PORT`，默认 8000；数据库使用 `DEVICE_DATABASE_PORT`，默认 5433）。
-Redis 不对宿主机暴露端口。
+Compose 会启动 `db`（pgvector/pgvector:pg16）、`redis`、`control-api`、
+`document-worker`、网关 `gateway`（Caddy）和 `oauth2-proxy`，启用 `local-idp`
+profile 时还会启动 `keycloak`。对宿主机只开放网关（`DEVICE_API_PORT`，默认 8000）、
+数据库（`DEVICE_DATABASE_PORT`，默认 5433）和本地 Keycloak（8180），且都只绑定在
+`127.0.0.1`；`control-api` 本身只能经由网关访问。详见[认证与网关](#认证与网关)。
 
 未设置 `DEVICE_DATABASE_PASSWORD` 时 Compose 会拒绝启动。密码会被拼进
 `DEVICE_DATABASE_URL`，所以如果其中含有 URL 保留字符，需要先做 URL 编码。
@@ -118,6 +121,8 @@ celery -A app.modules.document.celery_app:celery_app worker --loglevel=INFO
 | 数据库 | `DEVICE_DATABASE_URL`（宿主机）或 `DEVICE_DATABASE_NAME/USER/PASSWORD/PORT`（Compose） | Compose 会自行拼接 URL |
 | Redis | `DEVICE_REDIS_URL` | Celery broker |
 | 管理审核台 | `DEVICE_ADMIN_USERNAME`、`DEVICE_ADMIN_PASSWORD` | 未设置密码时审核台不可用 |
+| 身份（API） | `DEVICE_OIDC_ISSUER`、`DEVICE_OIDC_AUDIENCE`、`DEVICE_OIDC_JWKS_URL`、`DEVICE_OIDC_ACTOR_CLAIMS`、`DEVICE_OIDC_LEEWAY_SECONDS` | 未设置 issuer 和 audience 时 `/api/v1` 返回 503 |
+| 网关 | `DEVICE_OIDC_LOGIN_URL`、`DEVICE_OIDC_TOKEN_URL`、`DEVICE_GATEWAY_CLIENT_SECRET`、`DEVICE_GATEWAY_COOKIE_SECRET`、`DEVICE_GATEWAY_COOKIE_SECURE`、`DEVICE_GATEWAY_PUBLIC_URL`、`DEVICE_GATEWAY_ALLOWED_CIDRS`、`DEVICE_GATEWAY_SITE_ADDRESS` | 仅 Compose 使用 |
 | 文档存储 | `DEVICE_DOCUMENT_STORAGE_ROOT`、`DEVICE_DOCUMENT_MAX_FILE_BYTES`、`DEVICE_DOCUMENT_MAX_PDF_PAGES`、`DEVICE_DOCUMENT_MIN_TEXT_CHARS_PER_PAGE`、`DEVICE_DOCUMENT_TASK_VISIBILITY_TIMEOUT_SECONDS` | 文本量低于阈值的页面会走 OCR |
 | 抽取 LLM | `DEVICE_DOCUMENT_LLM_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS/MAX_OUTPUT_TOKENS`、`DEVICE_DOCUMENT_EXTRACTION_GROUP_MAX_TOKENS` | OpenAI 兼容接口 |
 | 视觉（OCR） | `DEVICE_DOCUMENT_VISION_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS` | OpenAI 兼容接口 |
@@ -127,6 +132,54 @@ celery -A app.modules.document.celery_app:celery_app worker --loglevel=INFO
 
 每个 AI 服务（抽取、视觉、Embedding、诊断）都有独立的地址、密钥、模型和超时，
 可以分别指向不同厂商或本地服务。
+
+## 认证与网关
+
+三个部分各管一件事：
+
+- **身份提供方**（OIDC：Keycloak、飞书、Azure AD 等）负责"你是谁"，人和程序都在这里登记。
+- **网关**（`gateway`，即 Caddy，加上 `oauth2-proxy`）是唯一对外的入口。它拒绝
+  `DEVICE_GATEWAY_ALLOWED_CIDRS` 以外的来源，用会话 cookie 让浏览器登录，接受程序
+  带来的身份提供方 token，并把校验过的 token 转给 API。只有 `/health` 不需要登录。
+- **control-api** 不对外暴露端口。它会再校验一次转发来的 JWT（用身份提供方的 JWKS
+  验签，检查 `iss`、`aud`、`exp`，只接受非对称算法），即使有请求绕过网关也无法冒充
+  身份；并把调用方（依次取 `email`、`preferred_username`、`azp`、`client_id`、
+  `sub`）记为候选审核操作的操作人。
+
+没有有效登录时，`/api/*` 返回 `401`，其他页面跳转到身份提供方登录。`/admin`
+审核台在网关登录之后仍然要输入它自己的密码。
+
+### 本地身份提供方
+
+`.env.example` 里设置了 `COMPOSE_PROFILES=local-idp`，会在 <http://localhost:8180>
+启动 Keycloak（管理后台 `admin` / `admin`），导入
+[`deploy/keycloak/device-realm.json`](deploy/keycloak/device-realm.json) 中的 realm：
+
+| 客户端 / 用户 | 用途 |
+| --- | --- |
+| `device-control-api` | 网关的浏览器登录；它的 id 就是 API 的 audience |
+| `device-cli` / `local-dev-cli-secret` | 示例程序客户端（client credentials） |
+| `reviewer` / `reviewer` | 示例用户 |
+
+token 的 issuer 固定是 `http://localhost:8180/realms/device`；容器通过
+`http://keycloak:8080` 拉取公钥和换取 token，所以各个端点要分别配置。
+
+### 接入正式的身份提供方
+
+1. 为网关登记一个机密（confidential）OIDC 客户端，回调地址为
+   `<DEVICE_GATEWAY_PUBLIC_URL>/oauth2/callback`。客户端 id 填到
+   `DEVICE_OIDC_AUDIENCE`，密钥填到 `DEVICE_GATEWAY_CLIENT_SECRET`。
+2. 每个程序单独登记一个客户端（client credentials），并加 audience mapper，让它的
+   token 的 `aud` 包含 `DEVICE_OIDC_AUDIENCE`，同时带上 `email` claim。
+3. 从身份提供方的 `/.well-known/openid-configuration` 中，把 `issuer`、
+   `authorization_endpoint`、`token_endpoint`、`jwks_uri` 分别填到
+   `DEVICE_OIDC_ISSUER`、`DEVICE_OIDC_LOGIN_URL`、`DEVICE_OIDC_TOKEN_URL`、
+   `DEVICE_OIDC_JWKS_URL`。
+4. 去掉 `COMPOSE_PROFILES=local-idp`，把 `DEVICE_GATEWAY_COOKIE_SECRET` 设为随机值
+   （16、24 或 32 字节），设置 `DEVICE_GATEWAY_COOKIE_SECURE=true`，并把
+   `DEVICE_GATEWAY_ALLOWED_CIDRS` 收窄到负载均衡或办公网段。
+5. 如果前面有负载均衡终止 HTTPS，保持 `DEVICE_GATEWAY_SITE_ADDRESS=:80`；没有的话
+   把它设成域名，Caddy 会自动申请和续期证书。
 
 ## API 概览
 
@@ -184,7 +237,7 @@ RAG 检索（`/document-search`）基于 pgvector，必须显式指定文档或�
 ### 管理审核台
 
 设置 `DEVICE_ADMIN_USERNAME` 和足够强的 `DEVICE_ADMIN_PASSWORD`，然后打开
-<http://127.0.0.1:8000/admin/documents>。这个服务端渲染的审核台覆盖完整的审核流程：
+<http://localhost:8000/admin/documents>。这个服务端渲染的审核台覆盖完整的审核流程：
 
 - 筛选、分页查看文档审核队列，包括抽取失败的文档；
 - 对照结构化的候选字段、AI 原始输出和引用的证据；
@@ -293,7 +346,7 @@ alembic check
 - 为 `DEVICE_DATABASE_PASSWORD` 和 `DEVICE_ADMIN_PASSWORD` 设置强且唯一的值，
   模型服务的 API Key 不要提交到版本库；
 - 每次发布时，先运行 `alembic upgrade head`，再启动新的 API 和 worker 容器；
-- 在反向代理上终止 TLS，并把 `/admin` 限制在可信网络内；
+- 按[接入正式的身份提供方](#接入正式的身份提供方)配置，并在负载均衡上终止 TLS，或交给 Caddy；
 - `document-files` 卷和 PostgreSQL 数据要一起持久化和备份：源文档存在卷里，
   元数据存在数据库里。
 

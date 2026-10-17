@@ -80,26 +80,39 @@ docker compose exec control-api alembic upgrade head
 
 Open:
 
-- API docs: <http://127.0.0.1:8000/docs>
-- Review console: <http://127.0.0.1:8000/admin/documents>
+- API docs: <http://localhost:8000/docs>
+- Review console: <http://localhost:8000/admin/documents>
+
+Pages sign you in through the identity provider; the local Keycloak user is
+`reviewer` / `reviewer`.
 
 ### Try it
+
+Every `/api/v1` call needs a token from the identity provider. With the local
+Keycloak, the example machine client gets one like this:
+
+```bash
+TOKEN=$(curl -s -d grant_type=client_credentials -d client_id=device-cli \
+  -d client_secret=local-dev-cli-secret \
+  http://localhost:8180/realms/device/protocol/openid-connect/token \
+  | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
+```
 
 Upload a manual and start extraction:
 
 ```bash
-curl -F file=@manual.pdf -F device_model_id=1 http://127.0.0.1:8000/api/v1/documents
-curl -X POST http://127.0.0.1:8000/api/v1/documents/1/extraction-runs
+curl -H "Authorization: Bearer $TOKEN" -F file=@manual.pdf -F device_model_id=1 http://localhost:8000/api/v1/documents
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/documents/1/extraction-runs
 ```
 
 Review and import the candidate in the console. After the profile is
 released and a device instance exists, run a diagnosis:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs \
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diagnosis-runs \
   -H 'Content-Type: application/json' \
   -d '{"device_id": 1, "symptom": "Supply air temperature keeps rising"}'
-curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs/1/execute
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diagnosis-runs/1/execute
 ```
 
 ## Documentation
@@ -113,7 +126,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/diagnosis-runs/1/execute
 - [x] Phase 1: device catalog, capability model, command generation
 - [x] Phase 2: document intelligence and human review console
 - [x] Phase 3: read-only diagnosis agent and evaluation harness
-- [ ] Production hardening: API authentication, CI, deployment guide
+- [x] API authentication: OIDC identity provider, Caddy + oauth2-proxy gateway, JWT-verifying API
+- [ ] Production hardening: CI, deployment guide
 
 ## Security
 

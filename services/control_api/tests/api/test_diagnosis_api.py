@@ -11,6 +11,7 @@ from app.modules.diagnosis.router import (
     build_read_gateway,
 )
 from app.modules.testing.service import TestingService as DeviceTestingService
+from tests import oidc
 from tests.device.helpers import make_profile_graph
 
 
@@ -97,7 +98,9 @@ async def test_diagnosis_agent_executes_read_only_feedback_loop_and_persists_aud
     app.dependency_overrides[build_read_gateway] = lambda: gateway
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=oidc.auth_headers(),
     ) as client:
         created = await client.post(
             "/api/v1/diagnosis-runs",
@@ -145,7 +148,9 @@ async def test_diagnosis_run_rejects_unknown_target_point(db_session):
     _, device, _ = await _make_released_device(db_session)
     app = create_app()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=oidc.auth_headers(),
     ) as client:
         response = await client.post(
             "/api/v1/diagnosis-runs",

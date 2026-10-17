@@ -7,12 +7,29 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import auth
 from app.db.base import Base
 from app.db.session import async_session_factory
 from app.main import create_app
 
 # Import model packages so Base.metadata is fully populated.
 from app.modules import device, diagnosis, document, testing  # noqa: F401
+from tests import oidc
+
+
+@pytest.fixture(autouse=True)
+def _identity_provider(monkeypatch):
+    """Point API auth at the in-process test identity provider."""
+    monkeypatch.setenv("DEVICE_OIDC_ISSUER", oidc.ISSUER)
+    monkeypatch.setenv("DEVICE_OIDC_AUDIENCE", oidc.AUDIENCE)
+    monkeypatch.setenv("DEVICE_OIDC_JWKS_URL", oidc.JWKS_URL)
+
+    async def fetch_json(url: str) -> dict:
+        assert url == oidc.JWKS_URL
+        return oidc.JWKS
+
+    monkeypatch.setattr(auth, "_fetch_json", fetch_json)
+    auth.reset_jwks_cache()
 
 
 def _is_test_database_name(database_name: str) -> bool:
@@ -64,6 +81,8 @@ async def client() -> AsyncIterator[AsyncClient]:
         await _truncate_all(session)
     app = create_app()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=oidc.auth_headers(),
     ) as async_client:
         yield async_client

@@ -20,6 +20,7 @@ plus a Celery worker for document processing. It covers three phases:
 - [Quick start (Docker)](#quick-start-docker)
 - [Local development](#local-development)
 - [Configuration](#configuration)
+- [Authentication and gateway](#authentication-and-gateway)
 - [API overview](#api-overview)
 - [Phase 1: device catalog and capabilities](#phase-1-device-catalog-and-capabilities)
 - [Phase 2: document intelligence](#phase-2-document-intelligence)
@@ -60,7 +61,8 @@ Requirements: Docker with Compose v2.
 
 ```bash
 cp .env.example .env
-# edit .env: set DEVICE_DATABASE_PASSWORD and DEVICE_ADMIN_PASSWORD,
+# edit .env: set DEVICE_DATABASE_PASSWORD and DEVICE_ADMIN_PASSWORD (the
+# identity and gateway defaults work as-is with the local Keycloak),
 # plus the DEVICE_DOCUMENT_* / DEVICE_DIAGNOSIS_* provider settings you need
 
 docker compose up --build -d
@@ -69,14 +71,17 @@ docker compose exec control-api alembic upgrade head
 
 Then check:
 
-- API health: <http://127.0.0.1:8000/health> → `{"status": "ok"}`
-- Interactive API docs (Swagger UI): <http://127.0.0.1:8000/docs>
-- Admin review console: <http://127.0.0.1:8000/admin/documents>
+- API health: <http://localhost:8000/health> → `{"status": "ok"}`
+- Interactive API docs (Swagger UI): <http://localhost:8000/docs>
+- Admin review console: <http://localhost:8000/admin/documents>
 
-Compose starts four services: `db` (pgvector/pgvector:pg16), `redis`,
-`control-api`, and `document-worker`. API and database ports are bound to
-`127.0.0.1` only (API on `DEVICE_API_PORT`, default 8000; database on
-`DEVICE_DATABASE_PORT`, default 5433). Redis is not published to the host.
+Compose starts `db` (pgvector/pgvector:pg16), `redis`, `control-api`,
+`document-worker`, the `gateway` (Caddy) and `oauth2-proxy`, plus `keycloak`
+with the `local-idp` profile. Only the gateway (`DEVICE_API_PORT`, default
+8000), the database (`DEVICE_DATABASE_PORT`, default 5433) and the local
+Keycloak (8180) are published, all on `127.0.0.1`; `control-api` itself is
+reachable only through the gateway. See
+[Authentication and gateway](#authentication-and-gateway).
 
 Compose refuses to start without `DEVICE_DATABASE_PASSWORD`. Use a
 URL-encoded password if it contains reserved URL characters, because it is
@@ -120,6 +125,8 @@ All settings use the `DEVICE_` prefix (see
 | Database | `DEVICE_DATABASE_URL` (host) or `DEVICE_DATABASE_NAME/USER/PASSWORD/PORT` (Compose) | Compose builds the URL itself |
 | Redis | `DEVICE_REDIS_URL` | Celery broker |
 | Admin console | `DEVICE_ADMIN_USERNAME`, `DEVICE_ADMIN_PASSWORD` | Console is unusable until a password is set |
+| Identity (API) | `DEVICE_OIDC_ISSUER`, `DEVICE_OIDC_AUDIENCE`, `DEVICE_OIDC_JWKS_URL`, `DEVICE_OIDC_ACTOR_CLAIMS`, `DEVICE_OIDC_LEEWAY_SECONDS` | `/api/v1` answers 503 until issuer and audience are set |
+| Gateway | `DEVICE_OIDC_LOGIN_URL`, `DEVICE_OIDC_TOKEN_URL`, `DEVICE_GATEWAY_CLIENT_SECRET`, `DEVICE_GATEWAY_COOKIE_SECRET`, `DEVICE_GATEWAY_COOKIE_SECURE`, `DEVICE_GATEWAY_PUBLIC_URL`, `DEVICE_GATEWAY_ALLOWED_CIDRS`, `DEVICE_GATEWAY_SITE_ADDRESS` | Compose only |
 | Document storage | `DEVICE_DOCUMENT_STORAGE_ROOT`, `DEVICE_DOCUMENT_MAX_FILE_BYTES`, `DEVICE_DOCUMENT_MAX_PDF_PAGES`, `DEVICE_DOCUMENT_MIN_TEXT_CHARS_PER_PAGE`, `DEVICE_DOCUMENT_TASK_VISIBILITY_TIMEOUT_SECONDS` | Pages below the text threshold are sent to OCR |
 | Extraction LLM | `DEVICE_DOCUMENT_LLM_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS/MAX_OUTPUT_TOKENS`, `DEVICE_DOCUMENT_EXTRACTION_GROUP_MAX_TOKENS` | OpenAI-compatible |
 | Vision (OCR) | `DEVICE_DOCUMENT_VISION_BASE_URL/API_KEY/MODEL/TIMEOUT_SECONDS` | OpenAI-compatible |
@@ -130,6 +137,64 @@ All settings use the `DEVICE_` prefix (see
 Each AI provider (extraction, vision, embedding, diagnosis) has its own
 endpoint, key, model, and timeout, so they can point at different vendors or
 local servers.
+
+## Authentication and gateway
+
+Three parts, each with one job:
+
+- **Identity provider** (OIDC: Keycloak, Feishu, Azure AD, ...) decides who
+  you are. People and programs are both registered there.
+- **Gateway** (`gateway`, Caddy, plus `oauth2-proxy`) is the only published
+  entry point. It rejects clients outside `DEVICE_GATEWAY_ALLOWED_CIDRS`,
+  signs browsers in with a session cookie, accepts provider-issued bearer
+  tokens from programs, and forwards the verified token to the API. Only
+  `/health` is open.
+- **control-api** is not published. It verifies the forwarded JWT again
+  (signature against the provider's JWKS, `iss`, `aud`, `exp`; asymmetric
+  algorithms only) so a request that reaches it some other way cannot
+  impersonate anyone, and records the caller (`email`, then
+  `preferred_username`, `azp`, `client_id`, `sub`) as the actor on candidate
+  review actions.
+
+`/api/*` answers `401` without a valid login; other pages redirect to the
+provider's sign-in. The `/admin` console still asks for its own password after
+the gateway login.
+
+### Local identity provider
+
+`.env.example` sets `COMPOSE_PROFILES=local-idp`, which starts Keycloak on
+<http://localhost:8180> (admin console `admin` / `admin`) with the realm in
+[`deploy/keycloak/device-realm.json`](deploy/keycloak/device-realm.json):
+
+| Client / user | Use |
+| --- | --- |
+| `device-control-api` | The gateway's browser sign-in; its id is the API audience |
+| `device-cli` / `local-dev-cli-secret` | Example machine client (client credentials) |
+| `reviewer` / `reviewer` | Example person |
+
+Tokens always carry the issuer `http://localhost:8180/realms/device`; the
+containers fetch keys and redeem codes through `http://keycloak:8080`, which is
+why the endpoints are configured one by one.
+
+### Using a real identity provider
+
+1. Register a confidential OIDC client for the gateway with redirect URI
+   `<DEVICE_GATEWAY_PUBLIC_URL>/oauth2/callback`. Its client id is
+   `DEVICE_OIDC_AUDIENCE`; its secret is `DEVICE_GATEWAY_CLIENT_SECRET`.
+2. Register each program as its own client (client credentials) and add an
+   audience mapper so its tokens include `DEVICE_OIDC_AUDIENCE` in `aud` and an
+   `email` claim.
+3. Copy `issuer`, `authorization_endpoint`, `token_endpoint` and `jwks_uri`
+   from the provider's `/.well-known/openid-configuration` into
+   `DEVICE_OIDC_ISSUER`, `DEVICE_OIDC_LOGIN_URL`, `DEVICE_OIDC_TOKEN_URL` and
+   `DEVICE_OIDC_JWKS_URL`.
+4. Remove `COMPOSE_PROFILES=local-idp`, set a random
+   `DEVICE_GATEWAY_COOKIE_SECRET` (16, 24 or 32 bytes),
+   `DEVICE_GATEWAY_COOKIE_SECURE=true`, and narrow
+   `DEVICE_GATEWAY_ALLOWED_CIDRS` to the load balancer or office ranges.
+5. Behind a load balancer that terminates HTTPS, keep
+   `DEVICE_GATEWAY_SITE_ADDRESS=:80`. Without one, set it to the domain name
+   and Caddy obtains and renews the certificate itself.
 
 ## API overview
 
@@ -194,7 +259,7 @@ dimension.
 ### Admin review console
 
 Set `DEVICE_ADMIN_USERNAME` and a strong `DEVICE_ADMIN_PASSWORD`, then open
-<http://127.0.0.1:8000/admin/documents>. The server-rendered console covers
+<http://localhost:8000/admin/documents>. The server-rendered console covers
 the full review gate:
 
 - filter and page the document review queue, including extraction failures;
@@ -317,8 +382,8 @@ service anywhere else:
   `DEVICE_ADMIN_PASSWORD`, and keep provider API keys out of version control;
 - run `alembic upgrade head` on every release before starting new API or
   worker containers;
-- terminate TLS at a reverse proxy, and keep `/admin` restricted to trusted
-  networks;
+- follow [Using a real identity provider](#using-a-real-identity-provider)
+  and terminate TLS at the load balancer or let Caddy do it;
 - persist the `document-files` volume and the PostgreSQL data together; source
   documents are stored on the volume, metadata in the database.
 

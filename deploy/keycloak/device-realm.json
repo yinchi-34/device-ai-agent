@@ -1,0 +1,71 @@
+{
+  "realm": "device",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "clients": [
+    {
+      "clientId": "device-control-api",
+      "name": "Device AI Agent gateway (browser sign-in)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "local-dev-gateway-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:8000/oauth2/callback"],
+      "webOrigins": ["http://localhost:8000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*"
+      }
+    },
+    {
+      "clientId": "device-cli",
+      "name": "Example machine client (client credentials)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "local-dev-cli-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "control-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "device-control-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "reviewer",
+      "email": "reviewer@example.com",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Reviewer",
+      "enabled": true,
+      "credentials": [
+        {"type": "password", "value": "reviewer", "temporary": false}
+      ]
+    },
+    {
+      "username": "service-account-device-cli",
+      "serviceAccountClientId": "device-cli",
+      "email": "device-cli@service.local",
+      "emailVerified": true,
+      "enabled": true
+    }
+  ]
+}

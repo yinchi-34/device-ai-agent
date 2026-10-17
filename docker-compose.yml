@@ -1,6 +1,9 @@
 x-app-environment: &app-environment
   DEVICE_ADMIN_USERNAME: ${DEVICE_ADMIN_USERNAME:-admin}
   DEVICE_ADMIN_PASSWORD: ${DEVICE_ADMIN_PASSWORD:-}
+  DEVICE_OIDC_ISSUER: ${DEVICE_OIDC_ISSUER:-}
+  DEVICE_OIDC_AUDIENCE: ${DEVICE_OIDC_AUDIENCE:-}
+  DEVICE_OIDC_JWKS_URL: ${DEVICE_OIDC_JWKS_URL:-}
   DEVICE_DATABASE_URL: postgresql+psycopg://${DEVICE_DATABASE_USER:-device}:${DEVICE_DATABASE_PASSWORD:?Set DEVICE_DATABASE_PASSWORD}@db:5432/${DEVICE_DATABASE_NAME:-device_ai_agent}
   DEVICE_REDIS_URL: redis://redis:6379/0
   DEVICE_DOCUMENT_STORAGE_ROOT: /data/documents
@@ -61,10 +64,71 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:${DEVICE_API_PORT:-8000}:8000"
+    # Not published: all traffic goes through the gateway.
+    expose:
+      - "8000"
     volumes:
       - document-files:/data/documents
+
+  gateway:
+    image: caddy:2.10-alpine
+    environment:
+      GATEWAY_SITE_ADDRESS: ${DEVICE_GATEWAY_SITE_ADDRESS:-:80}
+      GATEWAY_ALLOWED_CIDRS: ${DEVICE_GATEWAY_ALLOWED_CIDRS:-private_ranges}
+    volumes:
+      - ./deploy/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - gateway-data:/data
+    depends_on:
+      - control-api
+      - oauth2-proxy
+    ports:
+      - "127.0.0.1:${DEVICE_API_PORT:-8000}:80"
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0
+    environment:
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${DEVICE_OIDC_ISSUER:?Set DEVICE_OIDC_ISSUER}
+      # Endpoints are given explicitly (from the provider's discovery document)
+      # so browser-facing and container-facing URLs may differ.
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+      OAUTH2_PROXY_LOGIN_URL: ${DEVICE_OIDC_LOGIN_URL:?Set DEVICE_OIDC_LOGIN_URL}
+      OAUTH2_PROXY_REDEEM_URL: ${DEVICE_OIDC_TOKEN_URL:?Set DEVICE_OIDC_TOKEN_URL}
+      OAUTH2_PROXY_OIDC_JWKS_URL: ${DEVICE_OIDC_JWKS_URL:?Set DEVICE_OIDC_JWKS_URL}
+      OAUTH2_PROXY_CLIENT_ID: ${DEVICE_OIDC_AUDIENCE:?Set DEVICE_OIDC_AUDIENCE}
+      OAUTH2_PROXY_CLIENT_SECRET: ${DEVICE_GATEWAY_CLIENT_SECRET:?Set DEVICE_GATEWAY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${DEVICE_GATEWAY_COOKIE_SECRET:?Set DEVICE_GATEWAY_COOKIE_SECRET}
+      OAUTH2_PROXY_COOKIE_SECURE: ${DEVICE_GATEWAY_COOKIE_SECURE:-true}
+      OAUTH2_PROXY_REDIRECT_URL: ${DEVICE_GATEWAY_PUBLIC_URL:-http://localhost:8000}/oauth2/callback
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${DEVICE_GATEWAY_EMAIL_DOMAINS:-*}
+      OAUTH2_PROXY_CODE_CHALLENGE_METHOD: S256
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # Programs authenticate with their own provider-issued JWT.
+      OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
+      # Pass the verified ID token on to control-api as "Authorization: Bearer".
+      OAUTH2_PROXY_SET_AUTHORIZATION_HEADER: "true"
+      OAUTH2_PROXY_UPSTREAMS: static://202
+    expose:
+      - "4180"
+
+  # Local identity provider for development only. Enable with
+  # COMPOSE_PROFILES=local-idp; production points DEVICE_OIDC_* at a real one.
+  keycloak:
+    profiles: ["local-idp"]
+    image: quay.io/keycloak/keycloak:26.3
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${DEVICE_KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Tokens always carry this issuer; containers fetch keys via keycloak:8080.
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    volumes:
+      - ./deploy/keycloak/device-realm.json:/opt/keycloak/data/import/device-realm.json:ro
+    ports:
+      - "127.0.0.1:8180:8080"
 
   document-worker:
     build: ./services/control_api
@@ -80,3 +144,4 @@ services:
 
 volumes:
   document-files:
+  gateway-data:

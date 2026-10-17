@@ -1,0 +1,61 @@
+# Gateway in front of control-api.
+#
+# - Only clients from GATEWAY_ALLOWED_CIDRS may connect (default: private ranges).
+# - Every route except /health needs a login checked by oauth2-proxy against the
+#   OIDC identity provider. Browsers get a session cookie; programs send their
+#   own provider-issued JWT as "Authorization: Bearer ...".
+# - oauth2-proxy hands the verified token to control-api in the Authorization
+#   header; control-api verifies it again and records the caller.
+#
+# GATEWAY_SITE_ADDRESS defaults to plain HTTP on :80 for use behind a load
+# balancer that terminates HTTPS. Set it to a domain name to let Caddy obtain
+# and renew a certificate itself.
+{
+	admin off
+}
+
+{$GATEWAY_SITE_ADDRESS::80} {
+	route {
+		@blocked not remote_ip {$GATEWAY_ALLOWED_CIDRS:private_ranges}
+		# route keeps the written order, so the IP check runs before any handle.
+		respond @blocked "Forbidden" 403
+
+		# Liveness probe for the load balancer; carries no data.
+		handle /health {
+			reverse_proxy control-api:8000
+		}
+
+		# oauth2-proxy's own sign-in, callback and sign-out pages.
+		handle /oauth2/* {
+			reverse_proxy oauth2-proxy:4180 {
+				header_up X-Real-IP {remote_host}
+				header_up X-Forwarded-Uri {uri}
+			}
+		}
+
+		# API clients get a plain 401 instead of a login redirect.
+		handle /api/* {
+			forward_auth oauth2-proxy:4180 {
+				uri /oauth2/auth
+				header_up X-Real-IP {remote_host}
+				copy_headers Authorization
+			}
+			reverse_proxy control-api:8000
+		}
+
+		# Browser pages (/docs, /admin, ...) redirect to the identity provider.
+		handle {
+			forward_auth oauth2-proxy:4180 {
+				uri /oauth2/auth
+				header_up X-Real-IP {remote_host}
+				copy_headers Authorization
+
+				@unauthenticated status 401
+				handle_response @unauthenticated {
+					redir * /oauth2/start?rd={uri} 302
+				}
+			}
+			reverse_proxy control-api:8000
+		}
+	}
+}
