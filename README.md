@@ -2,8 +2,8 @@
 
 # Device AI Agent
 
-**Turn industrial device manuals into reviewable device profiles, and diagnose
-devices with an AI agent that can only read.**
+**AI-assisted device onboarding and read-only diagnosis for industrial
+equipment.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
@@ -16,23 +16,24 @@ English | [简体中文](README.zh-CN.md)
 
 ---
 
-Integrating a new industrial device usually means someone reads a 300-page
-manual, copies register maps into a spreadsheet, and hopes nothing was
-mistyped. Diagnosing it later means more manual reading and more guesswork.
+Device AI Agent is a backend platform that converts industrial device
+manuals into structured, human-approved device profiles and provides an
+auditable, read-only AI diagnosis service built on those profiles. It reduces
+the manual effort of transcribing register maps and searching documentation,
+while keeping every AI-generated result under human control.
 
-Device AI Agent automates the tedious parts without giving up control:
-
-- **AI drafts, humans approve.** Upload a PDF or DOCX manual (scanned ones
-  too). The system extracts a device profile candidate in which sourced fields
-  link back to the exact page and passage. Nothing becomes a profile until a
-  reviewer approves it, and AI output never releases a profile.
-- **Diagnosis that cannot break anything.** The diagnosis agent reasons over
-  released profiles and manual evidence, and may read one named point at a
-  time through a read-only gateway. It has no write tools, no raw addresses,
-  no SQL, and every step is audited.
-- **One capability model across protocols.** Describe what a device *can do*
-  once (observe, control, diagnose, configure) and bind it to Modbus, BACnet,
-  MQTT, or OPC UA points per profile. Commands are generated from those
+- **Human-approved extraction.** PDF and DOCX manuals, including scanned
+  documents, are processed into device profile candidates. Sourced fields are
+  linked to the originating page and passage. A candidate becomes a profile
+  only after explicit reviewer approval, and AI processing never releases a
+  profile.
+- **Read-only diagnosis.** The diagnosis agent reasons over released profiles
+  and manual evidence and reads one named point at a time through a read-only
+  gateway. Write operations, raw addresses, and SQL are unavailable to the
+  agent, and every step is recorded for audit.
+- **Protocol-independent capability model.** Device capabilities (observe,
+  control, diagnose, configure) are defined once and bound per profile to
+  Modbus, BACnet, MQTT, or OPC UA points. Commands are generated from these
   bindings.
 
 ## How it works
@@ -83,13 +84,14 @@ Open:
 - API docs: <http://localhost:8000/docs>
 - Review console: <http://localhost:8000/admin/documents>
 
-Pages sign you in through the identity provider; the local Keycloak user is
-`reviewer` / `reviewer`.
+Browser access requires sign-in through the identity provider. The local
+Keycloak instance provides the test account `reviewer` / `reviewer`.
 
-### Try it
+### Usage example
 
-Every `/api/v1` call needs a token from the identity provider. With the local
-Keycloak, the example machine client gets one like this:
+All `/api/v1` requests require an access token issued by the identity
+provider. With the local Keycloak instance, the sample machine client obtains a
+token as follows:
 
 ```bash
 TOKEN=$(curl -s -d grant_type=client_credentials -d client_id=device-cli \
@@ -105,8 +107,8 @@ curl -H "Authorization: Bearer $TOKEN" -F file=@manual.pdf -F device_model_id=1 
 curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/documents/1/extraction-runs
 ```
 
-Review and import the candidate in the console. After the profile is
-released and a device instance exists, run a diagnosis:
+Review and import the candidate in the review console. Once the profile has
+been released and a device instance has been registered, start a diagnosis:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diagnosis-runs \
@@ -131,15 +133,19 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 
 ## Security
 
-The review console and API are meant for trusted networks. By default, Docker
-Compose binds ports to `127.0.0.1`. Do not expose the service directly to the
-internet. See [deployment notes](DEVELOPMENT.md#deployment-notes).
+All traffic enters through an authenticating gateway, and the API
+independently verifies every identity token. By default, Docker Compose binds
+published ports to `127.0.0.1`. Before deploying beyond a local environment,
+review the [deployment notes](DEVELOPMENT.md#deployment-notes). Please report
+security issues privately through
+[GitHub private vulnerability reporting](https://github.com/yinchi-34/device-ai-agent/security/advisories/new) rather than through public
+issues.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run `ruff check .` and
-`pytest -v` from `services/control_api` before submitting; see the
-[developer guide](DEVELOPMENT.md#testing) for test database setup.
+Issues and pull requests are welcome. Before submitting a change, run
+`ruff check .` and `pytest -v` in `services/control_api`. Test database setup
+is described in the [developer guide](DEVELOPMENT.md#testing).
 
 ## License
 
