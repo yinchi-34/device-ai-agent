@@ -111,6 +111,7 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 ## 文档
 
 - [开发文档](DEVELOPMENT.zh-CN.md)：架构、项目结构、配置说明、API 一览、本地开发、测试
+- [部署指南](DEPLOYMENT.zh-CN.md)：云服务器上线、负载均衡和防火墙、升级、备份、安全检查清单
 - 交互式 API 文档：运行中实例的 `/docs`
 
 ## 路线图
@@ -120,7 +121,7 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 - [x] 阶段 3：只读诊断 Agent 与评测工具
 - [x] API 认证：OIDC 身份提供方、Caddy + oauth2-proxy 网关、应用校验 JWT
 - [x] CI：每个 PR 都跑 lint、迁移检查、测试以及 compose 和网关配置校验
-- [ ] 生产化：部署指南
+- [x] 部署指南：[DEPLOYMENT.zh-CN.md](DEPLOYMENT.zh-CN.md)
 
 ## 安全
 

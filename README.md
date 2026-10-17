@@ -119,6 +119,8 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 
 - [Developer guide](DEVELOPMENT.md): architecture, project structure,
   configuration reference, API map, local development, testing
+- [Deployment guide](DEPLOYMENT.md): production setup on a cloud server,
+  load balancer and firewall, upgrades, backups, security checklist
 - Interactive API reference: `/docs` on a running instance
 
 ## Roadmap
@@ -128,7 +130,7 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 - [x] Phase 3: read-only diagnosis agent and evaluation harness
 - [x] API authentication: OIDC identity provider, Caddy + oauth2-proxy gateway, JWT-verifying API
 - [x] CI: lint, migration check, tests, compose and gateway config on every PR
-- [ ] Production hardening: deployment guide
+- [x] Deployment guide: [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Security
 

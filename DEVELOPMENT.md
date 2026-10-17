@@ -375,6 +375,9 @@ expected.
 
 ## Deployment notes
 
+For a step-by-step production setup (load balancer, firewall, upgrades,
+backups) see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 The Compose file is set up for local and internal use. Before exposing the
 service anywhere else:
 
