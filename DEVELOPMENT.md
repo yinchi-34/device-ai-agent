@@ -5,8 +5,9 @@ English | [简体中文](DEVELOPMENT.zh-CN.md)
 Project structure, configuration, API map, and development workflow. For the
 project overview, see the [README](README.md).
 
-Everything runs in one service, the **Control API** (FastAPI + PostgreSQL),
-plus a Celery worker for document processing. It covers three phases:
+The platform consists of a single service, the **Control API** (FastAPI +
+PostgreSQL), and a Celery worker for document processing. Functionality is
+organized into three phases:
 
 | Phase | Module | What it does |
 | --- | --- | --- |
@@ -61,15 +62,15 @@ Requirements: Docker with Compose v2.
 
 ```bash
 cp .env.example .env
-# edit .env: set DEVICE_DATABASE_PASSWORD and DEVICE_ADMIN_PASSWORD (the
-# identity and gateway defaults work as-is with the local Keycloak),
-# plus the DEVICE_DOCUMENT_* / DEVICE_DIAGNOSIS_* provider settings you need
+# Edit .env: set DEVICE_DATABASE_PASSWORD, DEVICE_ADMIN_PASSWORD, and the
+# required DEVICE_DOCUMENT_* / DEVICE_DIAGNOSIS_* provider settings.
+# The identity and gateway defaults are preconfigured for the local Keycloak.
 
 docker compose up --build -d
 docker compose exec control-api alembic upgrade head
 ```
 
-Then check:
+Verify the deployment:
 
 - API health: <http://localhost:8000/health> → `{"status": "ok"}`
 - Interactive API docs (Swagger UI): <http://localhost:8000/docs>
@@ -108,8 +109,9 @@ Settings are read from `DEVICE_*` environment variables only; the app does not
 load a `.env` file by itself. `services/control_api/.env.example` lists the
 host-process values to export (the root `.env.example` is for Compose).
 
-To run the document worker on the host, you also need a Redis reachable at
-`DEVICE_REDIS_URL` (Compose's Redis is not exposed to the host):
+Running the document worker on the host additionally requires a Redis instance
+reachable at `DEVICE_REDIS_URL`, because the Compose Redis service is not
+exposed to the host:
 
 ```bash
 celery -A app.modules.document.celery_app:celery_app worker --loglevel=INFO
@@ -140,10 +142,11 @@ local servers.
 
 ## Authentication and gateway
 
-Three parts, each with one job:
+Access control is divided among three components:
 
-- **Identity provider** (OIDC: Keycloak, Feishu, Azure AD, ...) decides who
-  you are. People and programs are both registered there.
+- **Identity provider** (any OIDC provider, such as Keycloak, Feishu, or
+  Azure AD) authenticates callers. Both users and machine clients are
+  registered with it.
 - **Gateway** (`gateway`, Caddy, plus `oauth2-proxy`) is the only published
   entry point. It rejects clients outside `DEVICE_GATEWAY_ALLOWED_CIDRS`,
   signs browsers in with a session cookie, accepts provider-issued bearer
@@ -157,8 +160,8 @@ Three parts, each with one job:
   review actions.
 
 `/api/*` answers `401` without a valid login; other pages redirect to the
-provider's sign-in. The `/admin` console still asks for its own password after
-the gateway login.
+provider's sign-in. The `/admin` console additionally requires its own password
+after gateway sign-in.
 
 ### Local identity provider
 
@@ -172,9 +175,10 @@ the gateway login.
 | `device-cli` / `local-dev-cli-secret` | Example machine client (client credentials) |
 | `reviewer` / `reviewer` | Example person |
 
-Tokens always carry the issuer `http://localhost:8180/realms/device`; the
-containers fetch keys and redeem codes through `http://keycloak:8080`, which is
-why the endpoints are configured one by one.
+Tokens always carry the issuer `http://localhost:8180/realms/device`, while the
+containers retrieve keys and redeem authorization codes through
+`http://keycloak:8080`. For this reason, each endpoint is configured
+individually.
 
 ### Using a real identity provider
 
@@ -193,8 +197,8 @@ why the endpoints are configured one by one.
    `DEVICE_GATEWAY_COOKIE_SECURE=true`, and narrow
    `DEVICE_GATEWAY_ALLOWED_CIDRS` to the load balancer or office ranges.
 5. Behind a load balancer that terminates HTTPS, keep
-   `DEVICE_GATEWAY_SITE_ADDRESS=:80`. Without one, set it to the domain name
-   and Caddy obtains and renews the certificate itself.
+   `DEVICE_GATEWAY_SITE_ADDRESS=:80`. Otherwise, set it to the domain name;
+   Caddy then obtains and renews the certificate automatically.
 
 ## API overview
 
@@ -280,8 +284,8 @@ Security model:
   bypass logout.
 - Admin responses send `Cache-Control: no-store` and other hardening headers.
 
-Keep the console on localhost, a VPN, or behind a trusted internal reverse
-proxy. It is not intended to be published directly to the internet.
+Deploy the console only on localhost, on a VPN, or behind a trusted internal
+reverse proxy. It must not be exposed directly to the internet.
 
 ## Phase 3: read-only diagnosis agent
 
@@ -335,9 +339,9 @@ explicit baseline review.
 
 ## Testing
 
-Tests need a PostgreSQL database whose name ends in `_test`; pytest refuses to
-truncate any other database. Tests use deterministic fakes and make no live
-provider calls.
+The test suite requires a PostgreSQL database whose name ends in `_test`;
+pytest refuses to truncate any other database. Tests use deterministic fakes
+and make no live provider calls.
 
 One-time setup with the Compose database:
 
@@ -370,13 +374,13 @@ alembic current
 alembic check
 ```
 
-`createdb` reports that the database already exists on later runs; that is
-expected.
+On subsequent runs, `createdb` reports that the database already exists. This
+message can be safely ignored.
 
 ## Deployment notes
 
-The Compose file is set up for local and internal use. Before exposing the
-service anywhere else:
+The Compose configuration targets local and internal environments. Before
+deploying to any other environment:
 
 - set strong, unique values for `DEVICE_DATABASE_PASSWORD` and
   `DEVICE_ADMIN_PASSWORD`, and keep provider API keys out of version control;
