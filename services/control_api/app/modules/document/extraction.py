@@ -86,6 +86,7 @@ def _normalized_from_persisted(chunk: DocumentChunk) -> NormalizedChunk:
         extraction_confidence=chunk.extraction_confidence,
         content_hash=chunk.content_hash,
         token_count=chunk.token_count,
+        context_text=chunk.context_text,
     )
 
 

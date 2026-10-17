@@ -225,6 +225,9 @@ class DocumentChunk(IdentityMixin, Base):
         String(32), nullable=False, default=ChunkContentType.TEXT.value
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    context_text: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
     page_number: Mapped[int | None] = mapped_column(Integer)
     block_index: Mapped[int] = mapped_column(Integer, nullable=False)
     bounding_box: Mapped[list[float] | None] = mapped_column(JSONB)

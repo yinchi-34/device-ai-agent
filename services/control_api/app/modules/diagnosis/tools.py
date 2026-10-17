@@ -207,6 +207,7 @@ class RuntimeDiagnosisToolbox:
                 {
                     "stable_ref": result.stable_ref,
                     "page_number": result.page_number,
+                    "section_context": result.context_text,
                     "content": result.content,
                     "similarity": result.similarity,
                 }

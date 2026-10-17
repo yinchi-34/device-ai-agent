@@ -397,7 +397,8 @@ def score_case(
                 stable_ref=result.stable_ref,
                 page_number=result.page_number,
                 similarity=round(result.similarity, 4),
-                chars=len(result.content),
+                # What the agent receives: the passage plus its section context.
+                chars=len(result.content) + len(result.context_text),
                 relevant=bool(matched),
                 duplicate=duplicate,
                 out_of_scope=document_model.get(result.source_document_id)

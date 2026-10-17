@@ -11,6 +11,7 @@ from defusedxml import ElementTree
 from pypdf import PdfReader
 
 from app.modules.document.providers import PdfPageRenderer, VisionOcrProvider
+from app.modules.document.segmentation import Segment, segment_page_text
 
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{_WORD_NS}}}"
@@ -27,6 +28,7 @@ class ParsedBlock:
     cells: list[str] | None = None
     table_index: int | None = None
     row_index: int | None = None
+    is_table_header: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,11 +94,13 @@ def parse_docx(path: Path) -> ParsedDocument:
                         cells=cells,
                         table_index=table_index,
                         row_index=row_index,
+                        is_table_header=row_index == 1,
                     )
                 )
     return ParsedDocument(
         format="docx", blocks=blocks, metadata={"block_count": len(blocks)}
     )
+
 
 def _is_usable_pdf_text(text: str, *, min_text_chars: int) -> bool:
     if len(text) < min_text_chars:
@@ -107,6 +111,65 @@ def _is_usable_pdf_text(text: str, *, min_text_chars: int) -> bool:
     )
     return control_count / len(text) <= 0.01
 
+
+class _PdfTableNumbering:
+    """Number tables across a PDF so a table split over pages keeps one index.
+
+    A page that starts with table rows (optionally under a "（续）"/"continued"
+    heading) continues the table that ended the previous page; anything else
+    between rows starts a new table.
+    """
+
+    def __init__(self) -> None:
+        self._table_index = 0
+        self._row_index = 0
+        self._open = False
+
+    def interrupt(self) -> None:
+        self._open = False
+
+    def blocks_for_page(
+        self, segments: list[Segment], page_number: int
+    ) -> list[ParsedBlock]:
+        blocks: list[ParsedBlock] = []
+        for segment in segments:
+            if segment.kind not in {"table_header", "table_row"}:
+                continuation_heading = (
+                    segment.kind == "heading"
+                    and not blocks
+                    and (
+                        "续" in segment.content
+                        or "continued" in segment.content.lower()
+                    )
+                )
+                if not continuation_heading:
+                    self._open = False
+                blocks.append(
+                    ParsedBlock(
+                        content=segment.content,
+                        content_type=segment.kind,
+                        page_number=page_number,
+                        extraction_method="pdf_text",
+                    )
+                )
+                continue
+            if not self._open or segment.kind == "table_header":
+                self._table_index += 1
+                self._row_index = 0
+                self._open = True
+            self._row_index += 1
+            blocks.append(
+                ParsedBlock(
+                    content=segment.content,
+                    content_type="table_row",
+                    page_number=page_number,
+                    extraction_method="pdf_text",
+                    table_index=self._table_index,
+                    row_index=self._row_index,
+                    is_table_header=segment.kind == "table_header",
+                )
+            )
+        return blocks
 
 
 async def parse_pdf(
@@ -119,17 +182,13 @@ async def parse_pdf(
     reader = PdfReader(path)
     blocks: list[ParsedBlock] = []
     ocr_pages: list[int] = []
+    tables = _PdfTableNumbering()
     for page_number, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
         if _is_usable_pdf_text(text, min_text_chars=min_text_chars):
-            blocks.append(
-                ParsedBlock(
-                    content=text,
-                    page_number=page_number,
-                    extraction_method="pdf_text",
-                )
-            )
+            blocks.extend(tables.blocks_for_page(segment_page_text(text), page_number))
             continue
+        tables.interrupt()
         ocr_pages.append(page_number)
         image_bytes = renderer.render_png(path, page_number)
         for vision_block in await vision.extract_page(image_bytes, page_number):

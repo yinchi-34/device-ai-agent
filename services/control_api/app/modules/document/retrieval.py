@@ -5,6 +5,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
+from app.modules.document.chunking import embedding_text, is_context_only
 from app.modules.document.models import (
     DocumentChunk,
     DocumentChunkEmbedding,
@@ -22,6 +23,7 @@ class DocumentSearchResult:
     page_number: int | None
     content: str
     similarity: float
+    context_text: str = ""
 
 
 async def embed_run_chunks(
@@ -36,7 +38,11 @@ async def embed_run_chunks(
         .where(DocumentChunk.extraction_run_id == run_id)
         .order_by(DocumentChunk.block_index, DocumentChunk.id)
     )
-    chunks = list((await session.scalars(statement)).all())
+    chunks = [
+        chunk
+        for chunk in (await session.scalars(statement)).all()
+        if not is_context_only(chunk.content_type, chunk.table_metadata)
+    ]
     if not chunks:
         return []
     if batch_size < 1:
@@ -71,7 +77,9 @@ async def embed_run_chunks(
     result = None
     for start in range(0, len(missing_chunks), batch_size):
         batch = missing_chunks[start : start + batch_size]
-        batch_result = await provider.embed([chunk.content for chunk in batch])
+        batch_result = await provider.embed(
+            [embedding_text(chunk.content, chunk.context_text) for chunk in batch]
+        )
         if len(batch_result.vectors) != len(batch):
             raise ProviderError("provider_embedding_count_mismatch")
         if (batch_result.provider, batch_result.model) != (
@@ -185,6 +193,7 @@ async def search_document_chunks(
             page_number=chunk.page_number,
             content=chunk.content,
             similarity=1.0 - float(row_distance),
+            context_text=chunk.context_text,
         )
         for chunk, row_distance in rows
     ]

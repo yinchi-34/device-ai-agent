@@ -273,3 +273,83 @@ async def test_search_uses_only_latest_embedded_run_per_document(db_session):
         )
     )
     assert chunk_run_id == retried.id
+
+
+class RecordingEmbeddingProvider(BatchEmbeddingProvider):
+    pass
+
+
+async def test_embed_run_chunks_skips_headings_and_prefixes_context(db_session):
+    document = SourceDocument(
+        original_file_name="manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="a" * 64,
+        storage_uri="original/context.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    run = ProfileExtractionRun(
+        source_document_id=document.id,
+        status="parsing",
+        extraction_provider="fake",
+        extraction_model="extract-v1",
+        embedding_provider="fake",
+        embedding_model="embed-v1",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    rows = [
+        ("pdf:page:1:block:1", "heading", "第 8 章 报警代码", "", {}),
+        (
+            "pdf:page:1:table:1:row:1",
+            "table_row",
+            "代码 说明",
+            "第 8 章 报警代码",
+            {"header": True},
+        ),
+        (
+            "pdf:page:1:table:1:row:2",
+            "table_row",
+            "A05 过滤器压差高",
+            "第 8 章 报警代码\n代码 说明",
+            {},
+        ),
+    ]
+    for index, (ref, kind, content, context, metadata) in enumerate(rows, start=1):
+        db_session.add(
+            DocumentChunk(
+                source_document_id=document.id,
+                extraction_run_id=run.id,
+                stable_ref=ref,
+                content_type=kind,
+                content=content,
+                context_text=context,
+                table_metadata=metadata,
+                page_number=1,
+                block_index=index,
+                extraction_method="pdf_text",
+                content_hash=str(index) * 64,
+                token_count=2,
+            )
+        )
+    await db_session.flush()
+    provider = RecordingEmbeddingProvider()
+
+    embeddings = await embed_run_chunks(db_session, run.id, provider)
+
+    assert provider.calls == [["第 8 章 报警代码\n代码 说明\nA05 过滤器压差高"]]
+    assert len(embeddings) == 1
+
+    results = await search_document_chunks(
+        db_session,
+        query="A05",
+        source_document_id=document.id,
+        device_model_id=None,
+        provider=embedding_provider([1.0, 0.0, 0.0]),
+        limit=5,
+    )
+    assert [(item.content, item.context_text) for item in results] == [
+        ("A05 过滤器压差高", "第 8 章 报警代码\n代码 说明")
+    ]

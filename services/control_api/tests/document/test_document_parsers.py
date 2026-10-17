@@ -94,3 +94,76 @@ async def test_low_text_pdf_uses_vision_provider(tmp_path):
     assert parsed.blocks[0].page_number == 1
     assert parsed.blocks[0].bounding_box == [1, 2, 3, 4]
     assert parsed.blocks[0].confidence == 0.96
+
+
+class _FakeTextPage:
+    def __init__(self, text):
+        self._text = text
+
+    def extract_text(self):
+        return self._text
+
+
+class _FakeTextReader:
+    def __init__(self, texts):
+        self.pages = [_FakeTextPage(text) for text in texts]
+
+
+async def test_text_pdf_is_split_into_headings_rows_and_paragraphs(
+    tmp_path, monkeypatch
+):
+    page_lines = [
+        [
+            "第 6 章 寄存器表",
+            "地址 名称 数据类型 读写",
+            "30001 送风温度 float32 只读",
+            "30003 回风温度 float32",
+            "只读",
+        ],
+        [
+            "第 6 章 寄存器表（续）",
+            "40001 送风温度设定值 float32 读写",
+            "第 7 章 控制逻辑",
+            "制冷模式下，控制器根据送风温度与设定值的",
+            "偏差调节冷水阀开度。",
+        ],
+    ]
+    pages = ["\n".join(lines) for lines in page_lines]
+    monkeypatch.setattr(
+        "app.modules.document.parsers.PdfReader", lambda path: _FakeTextReader(pages)
+    )
+
+    parsed = await parse_pdf(
+        tmp_path / "manual.pdf",
+        renderer=FakePdfPageRenderer(),
+        vision=FakeVisionOcrProvider(blocks=[]),
+        min_text_chars=10,
+    )
+
+    assert [
+        (block.page_number, block.content_type, block.table_index, block.row_index)
+        for block in parsed.blocks
+    ] == [
+        (1, "heading", None, None),
+        (1, "table_row", 1, 1),
+        (1, "table_row", 1, 2),
+        (1, "table_row", 1, 3),
+        (2, "heading", None, None),
+        (2, "table_row", 1, 4),
+        (2, "heading", None, None),
+        (2, "text", None, None),
+    ]
+    assert parsed.blocks[1].is_table_header is True
+    assert parsed.blocks[2].is_table_header is False
+    assert parsed.blocks[3].content == "30003 回风温度 float32只读"
+    assert parsed.blocks[-1].content == (
+        "制冷模式下，控制器根据送风温度与设定值的偏差调节冷水阀开度。"
+    )
+    assert all(block.extraction_method == "pdf_text" for block in parsed.blocks)
+
+
+def test_docx_marks_first_table_row_as_header(tmp_path):
+    parsed = parse_docx(make_docx(tmp_path / "manual.docx"))
+
+    rows = [block for block in parsed.blocks if block.content_type == "table_row"]
+    assert [row.is_table_header for row in rows] == [True, False]

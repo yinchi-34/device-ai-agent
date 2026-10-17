@@ -179,3 +179,4 @@ class DocumentSearchResultOut(ApiModel):
     page_number: int | None
     content: str
     similarity: float
+    context_text: str = ""
