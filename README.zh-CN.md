@@ -119,7 +119,8 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 - [x] 阶段 2：文档智能与人工审核台
 - [x] 阶段 3：只读诊断 Agent 与评测工具
 - [x] API 认证：OIDC 身份提供方、Caddy + oauth2-proxy 网关、应用校验 JWT
-- [ ] 生产化：CI、部署指南
+- [x] CI：每个 PR 都跑 lint、迁移检查、测试以及 compose 和网关配置校验
+- [ ] 生产化：部署指南
 
 ## 安全
 

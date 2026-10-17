@@ -127,7 +127,8 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 - [x] Phase 2: document intelligence and human review console
 - [x] Phase 3: read-only diagnosis agent and evaluation harness
 - [x] API authentication: OIDC identity provider, Caddy + oauth2-proxy gateway, JWT-verifying API
-- [ ] Production hardening: CI, deployment guide
+- [x] CI: lint, migration check, tests, compose and gateway config on every PR
+- [ ] Production hardening: deployment guide
 
 ## Security
 
