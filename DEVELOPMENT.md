@@ -187,9 +187,28 @@ human-reviewable device profile candidates:
 5. **Import**: approved imports are transactional and idempotent and create
    only DRAFT profiles. AI processing never releases a profile.
 
-RAG search (`/document-search`) uses pgvector, requires an explicit document
-or device-model scope, and filters by embedding provider, model, and
-dimension.
+RAG search (`/document-search`, and the diagnosis agent's `search_manual`)
+uses pgvector, requires an explicit document or device-model scope, and
+filters by embedding provider, model, and dimension.
+
+- **Chunking.** DOCX keeps paragraphs and table rows. Text PDF pages are split
+  into headings, table rows (the label line above a table becomes its header
+  row; tables continue across pages under a "续/continued" heading) and
+  paragraphs with wrapped lines rejoined. OCR pages keep the vision model's
+  blocks.
+- **Context.** Each chunk stores its section heading and, for table rows, the
+  table header in `context_text`. Content stays verbatim for evidence; the
+  context is prepended when embedding, sent to the extraction model, and
+  returned with search results. Headings and header rows are not indexed on
+  their own.
+- **Latest run only.** Search uses the newest run per document that has
+  embeddings for the query model, so retried extractions do not duplicate
+  results.
+- **Exact identifiers.** Alarm/fault codes (`A05`, `E05`), parameter numbers
+  (`P0.05`) and 5-6 digit register addresses in the query are also matched
+  exactly in chunk text, and that ranking is fused with the vector ranking by
+  reciprocal rank fusion (k=60). Rows that start with the code rank first.
+  Results report `matched_codes`.
 
 ### Admin review console
 

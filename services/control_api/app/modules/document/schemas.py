@@ -179,3 +179,5 @@ class DocumentSearchResultOut(ApiModel):
     page_number: int | None
     content: str
     similarity: float
+    context_text: str = ""
+    matched_codes: list[str] = Field(default_factory=list)
