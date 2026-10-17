@@ -123,8 +123,8 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 
 所有流量均经由带认证的网关进入，API 会对每个身份令牌进行独立校验。Docker Compose
 默认仅将对外端口绑定至 `127.0.0.1`。在本地以外的环境部署前，请参阅
-[部署注意事项](DEVELOPMENT.zh-CN.md#部署注意事项)。如发现安全问题，请私下联系维护者，
-请勿通过公开 Issue 提交。
+[部署注意事项](DEVELOPMENT.zh-CN.md#部署注意事项)。如发现安全问题，请通过
+[GitHub 私密漏洞报告](https://github.com/yinchi-34/device-ai-agent/security/advisories/new)提交，请勿通过公开 Issue 提交。
 
 ## 参与贡献
 

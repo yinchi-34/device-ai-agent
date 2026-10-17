@@ -137,7 +137,8 @@ All traffic enters through an authenticating gateway, and the API
 independently verifies every identity token. By default, Docker Compose binds
 published ports to `127.0.0.1`. Before deploying beyond a local environment,
 review the [deployment notes](DEVELOPMENT.md#deployment-notes). Please report
-security issues privately to the maintainers rather than through public
+security issues privately through
+[GitHub private vulnerability reporting](https://github.com/yinchi-34/device-ai-agent/security/advisories/new) rather than through public
 issues.
 
 ## Contributing
