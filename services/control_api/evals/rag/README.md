@@ -85,3 +85,34 @@ python -m evals.rag.build_queries    # 生成 queries.jsonl
 `R5–R8`（`--dense`）稠密 / 混合 RRF。
 
 注意：离线默认只跑 BM25，跨语言与口语化类别的结论必须用 `--dense` 在真实 embedding 模型上复核。
+
+## 分层测试集（v2）
+
+三个维度交叉：**阶段**（T1 解析 → T2 分块 → T3 检索 → T4 生成 → T5 端到端）×
+**领域**（通用 / 垂直行业）× **难度**（易 / 中 / 难）。
+
+| 阶段 | 数据 | 主要指标 | 入口 |
+|---|---|---|---|
+| T1 解析 | 金标证据事实 257 条 + OCR 页真值 | 原文/归一化后事实存活率、OCR CER | `stages.parse_stage` |
+| T2 分块 | 同上 + `context_terms` | self_contained@5、token 分布 | `harness.evaluate_run` |
+| T3 检索 · 垂直 | `queries.jsonl` 295 题（手写 116 + 模板 179） | recall@5 / full@5 / MRR / nDCG 等 | `harness.py` |
+| T3 检索 · 通用 | CRUD-RAG 中文新闻 600 题（1/2/3 文档各 200），首次运行时下载，不入库 | 同上（文档级 qrels） | `general_track.py` |
+| T4 生成 | `generation_cases.jsonl` 116 题（12 题应拒答） | 关键事实召回、拒答准确率、误拒率 | `stages.score_generation` |
+| T5 端到端 | `evals/diagnosis/cases.json` | 分类准确率、升级率、危险动作率 | `scripts/run_diagnosis_evals.py` |
+
+难度三指标（`difficulty.py`）：D1 推理跳数、D2 词面鸿沟（查询词在金标段落中的覆盖率）、
+D3 经验难度（参考系统面板 top-5 全覆盖的比例）。各映射到 0/1/2，求和 ≤1 易、2–3 中、≥4 难。
+系统对比按 **先验难度**（只用 D1+D2）分层，避免用被比较的系统去定义难度。
+
+人工标注（`annotation.py`）：三类触发——先验与经验难度矛盾、所有不可答题、模板题 10% 抽检；
+每类超过 30 条时随机抽 30 条做验收抽样。双人独立标注，Cohen's κ ≥ 0.61 方可合并。
+
+可比性（`power.py`、`scripts/run_rag_testsuite.py`）：每个分层报告 n、SE、聚类 SE（按手册章节/新闻事件聚类）、
+设计效应 DEFF、ICC、配对随机化检验 p、80% 功效下的最小可检测效应 MDE，以及达到 Δ=0.05 所需的独立章节数。
+
+```bash
+python -m evals.rag.difficulty --write          # 生成 labels/difficulty.jsonl
+python scripts/run_rag_testsuite.py --out suite.json
+python -m evals.rag.annotation export --annotator A
+python -m evals.rag.annotation agree labels/queue_A.csv labels/queue_B.csv
+```

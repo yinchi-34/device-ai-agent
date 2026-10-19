@@ -93,6 +93,22 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+def tokenize_unigram(text: str) -> list[str]:
+    """Variant used as a second lexical panel member: CJK unigrams only, no bigrams."""
+    tokens: list[str] = []
+    for piece in _TOKEN_RE.findall(text.casefold()):
+        if "\u2e80" <= piece[0] <= "\u9fff":
+            tokens.extend(piece)
+        else:
+            tokens.append(piece)
+    return tokens
+
+
+def content_terms(text: str) -> set[str]:
+    """Terms used for the lexical-overlap difficulty signal (folded; CJK bigrams + words, no unigrams)."""
+    return {t for t in tokenize(fold_text(text)) if len(t) >= 2}
+
+
 # ---------------------------------------------------------------------------
 # Corpus loading with the repository parsers
 # ---------------------------------------------------------------------------
@@ -281,9 +297,9 @@ def _structured(doc: dict, parsed: ParsedDocument, max_tokens: int = 320) -> lis
                     path = [title, line]
                     continue
                 if _ROW_START_RE.match(line):
-                    flush_prose(block)
                     if header_line is None and prose:
-                        header_line = prose.pop()
+                        header_line = prose.pop()  # the line right above the first row is the header
+                    flush_prose(block)
                     rows.append(line)
                 elif rows:
                     rows[-1] += " " + line  # wrapped table cell continuation
@@ -324,27 +340,28 @@ def build_index_chunks(
 class BM25:
     """Okapi BM25 (Robertson & Zaragoza 2009), k1=1.2, b=0.75."""
 
-    def __init__(self, chunks: Sequence[EvalChunk], k1: float = 1.2, b: float = 0.75):
+    def __init__(self, chunks: Sequence, k1: float = 1.2, b: float = 0.75, tokenizer=None):
         self.k1, self.b = k1, b
-        self.docs = [Counter(tokenize(c.content)) for c in chunks]
+        self.tokenizer = tokenizer or tokenize
+        texts = [c if isinstance(c, str) else c.content for c in chunks]
+        self.docs = [Counter(self.tokenizer(t)) for t in texts]
         self.lens = [sum(d.values()) for d in self.docs]
         self.avgdl = sum(self.lens) / max(1, len(self.lens))
-        df: Counter[str] = Counter()
-        for d in self.docs:
-            df.update(d.keys())
+        self.postings: dict[str, list[tuple[int, int]]] = defaultdict(list)
+        for i, d in enumerate(self.docs):
+            for t, tf in d.items():
+                self.postings[t].append((i, tf))
         n = len(self.docs)
-        self.idf = {t: math.log(1 + (n - f + 0.5) / (f + 0.5)) for t, f in df.items()}
+        self.idf = {t: math.log(1 + (n - len(p) + 0.5) / (len(p) + 0.5)) for t, p in self.postings.items()}
 
     def scores(self, query: str, candidates: Sequence[int]) -> dict[int, float]:
-        q = tokenize(query)
-        out = {}
-        for i in candidates:
-            d, dl, s = self.docs[i], self.lens[i], 0.0
-            for t in q:
-                tf = d.get(t)
-                if tf:
-                    s += self.idf[t] * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * dl / self.avgdl))
-            out[i] = s
+        """Score via postings; every candidate gets a score (0.0 when no term matches)."""
+        out = dict.fromkeys(candidates, 0.0)
+        for t in self.tokenizer(query):
+            for i, tf in self.postings.get(t, ()):
+                if i in out:
+                    norm = self.k1 * (1 - self.b + self.b * self.lens[i] / self.avgdl)
+                    out[i] += self.idf[t] * tf * (self.k1 + 1) / (tf + norm)
         return out
 
 
@@ -446,7 +463,7 @@ def _truncate_to_budget(texts: Sequence[str], budget: int) -> str:
 class RunConfig:
     name: str
     strategy: str = "baseline"
-    retriever: str = "bm25"  # bm25 | dense | hybrid
+    retriever: str = "bm25"  # bm25 | bm25u | dense | hybrid
     dedupe: bool = False
     current_only: bool = False
     retry_runs: int = 1
@@ -468,6 +485,8 @@ def evaluate_run(cfg: RunConfig, manifest: dict, parsed: dict, cases: list[dict]
     retrievers = {}
     if cfg.retriever in {"bm25", "hybrid"}:
         retrievers["bm25"] = BM25(chunks)
+    if cfg.retriever == "bm25u":
+        retrievers["bm25u"] = BM25(chunks, tokenizer=tokenize_unigram)
     if cfg.retriever in {"dense", "hybrid"}:
         retrievers["dense"] = DenseOpenAICompatible(chunks)
     markers = [match_key(x) for x in manifest.get("injected_markers", [])]

@@ -47,10 +47,13 @@ def case(
     context_terms: list[str] | None = None,
     distractors: list[str] | None = None,
     tags: list[str] | None = None,
+    source: str = "handwritten",
 ) -> None:
     CASES.append(
         {
             "id": cid,
+            "track": "vertical",
+            "source": source,
             "category": category,
             "query": query,
             "device_model_id": scope,
@@ -328,7 +331,65 @@ case("inj-04", "injection", "变频器故障后如何自动重启", VFD,
      [["P5.01"]], "需设置 P5.01=1；默认不自动重启。")
 
 
+# ---------------------------------------------------------------------------
+# 13. template — CRAG-style templated questions generated from the structured
+#     tables in corpus_spec (CRAG built its KG questions from ~600 templates).
+#     They add statistical power for easy/medium strata cheaply; hard cases stay
+#     handwritten. A random sample must be human-verified (see annotation.py).
+# ---------------------------------------------------------------------------
+
+
+def generate_template_cases() -> None:
+    from evals.rag import corpus_spec as s
+
+    regs = s.ahu200_registers("0.01")
+    for addr, name, dtype, unit, scale, access, _note in regs:
+        row = f"{addr} {name} {dtype}"
+        case(f"tpl-ahu-reg-{addr}-name", "exact_id", f"AHU-200 寄存器 {addr} 是什么", AHU200,
+             [[f"{addr} {name}"]], f"{addr} 为{name}。", source="template")
+        case(f"tpl-ahu-reg-{addr}-addr", "table_lookup", f"{name}的寄存器地址是多少", AHU200,
+             [[f"{addr} {name}"]], f"{addr}。", source="template",
+             distractors=[f"{int(addr) + 100} {name}"])
+        dist = ["40008 风机频率 UINT16 Hz 0.1 R"] if addr == "40008" else []
+        case(f"tpl-ahu-reg-{addr}-scale", "table_lookup", f"{name}的单位和缩放系数", AHU200,
+             [[f"{row} {unit} {scale}"]], f"单位 {unit}，缩放系数 {scale}。", source="template",
+             context_terms=["缩放系数"], distractors=dist)
+    for code, name, cond, action in s.ahu200_alarms("250"):
+        case(f"tpl-ahu-alarm-{code}-name", "exact_id", f"AHU-200 报警 {code} 是什么意思", AHU200,
+             [[f"{code} {name}"]], f"{code}：{name}。", source="template")
+        case(f"tpl-ahu-alarm-{code}-fix", "table_lookup", f"出现{name}报警应该怎么处理", AHU200,
+             [[f"{code} {name}"]], action, source="template")
+    for code, name, rng, default, unit in s.VFD_PARAMS:
+        case(f"tpl-vfd-param-{code}", "exact_id", f"VFD-750 parameter {code}", VFD,
+             [[f"{code} {name}"]], f"{code} {name}, default {default} {unit}.", source="template")
+        case(f"tpl-vfd-param-{code}-default", "table_lookup", f"What is the default {name.lower()} of the VFD-750?",
+             VFD, [[f"{code} {name}"]], f"{default} {unit}", source="template", context_terms=["Default"])
+        case(f"tpl-vfd-param-{code}-zh", "cross_lingual", f"变频器参数 {code} 的默认值是多少", VFD,
+             [[f"{code} {name}"]], f"默认 {default} {unit}。", source="template")
+    for addr, name, access, scaling in s.VFD_REGISTERS:
+        case(f"tpl-vfd-reg-{addr}", "table_lookup", f"Which register holds the {name.lower()}?", VFD,
+             [[f"{addr} {name}"]], f"{addr}，{scaling}。", source="template")
+    for code, desc, cause, remedy in s.VFD_FAULTS:
+        case(f"tpl-vfd-fault-{code}", "exact_id", f"VFD-750 fault {code} meaning", VFD,
+             [[f"{code} {desc}"]], f"{desc}. {remedy}.", source="template")
+        case(f"tpl-vfd-fault-{code}-zh", "cross_lingual", f"变频器报 {code} 故障的原因和处理方法", VFD,
+             [[f"{code} {desc}"]], f"{cause}；{remedy}。", source="template")
+    for obj, oname, zh, unit, _note in s.CH500_OBJECTS:
+        case(f"tpl-ch-obj-{obj}", "exact_id", f"CH-500 BACnet 对象 {obj} 是什么", CH500,
+             [[f"{obj} {oname} {zh}"]], f"{obj} {zh}（{oname}）。", source="template")
+        case(f"tpl-ch-obj-{obj}-zh", "table_lookup", f"{zh}对应哪个 BACnet 对象", CH500,
+             [[f"{obj} {oname} {zh}"]], f"{obj}。", source="template")
+    for code, name, cond, action in s.CH500_ALARMS:
+        case(f"tpl-ch-alarm-{code}", "exact_id", f"冷水机组报警 {code}", CH500,
+             [[f"{code} {name}"]], f"{code} {name}：{cond}。", source="template")
+    for addr, name, *_rest in s.AHU300_REGISTERS:
+        case(f"tpl-ahu300-reg-{addr}", "table_lookup", f"AHU-300 {name}寄存器地址", AHU300,
+             [[f"{addr} {name}"]], f"{addr}。", source="template",
+             distractors=[f"{int(addr) - 100} {name}"])
+
+
 def main() -> None:
+    generate_template_cases()
     ids = [c["id"] for c in CASES]
     assert len(ids) == len(set(ids)), "duplicate case id"
     with OUT.open("w", encoding="utf-8") as fh:
