@@ -1,0 +1,137 @@
+{
+  "version": "1.0",
+  "documents": [
+    {
+      "doc_id": "ahu200_2025",
+      "file": "ahu200_manual_2025.docx",
+      "device_model_id": 1,
+      "device_model": "AHU-200",
+      "language": "zh",
+      "edition": "2025",
+      "is_current": true
+    },
+    {
+      "doc_id": "ahu200_2023",
+      "file": "ahu200_manual_2023.pdf",
+      "device_model_id": 1,
+      "device_model": "AHU-200",
+      "language": "zh",
+      "edition": "2023",
+      "is_current": false
+    },
+    {
+      "doc_id": "ahu300",
+      "file": "ahu300_manual.pdf",
+      "device_model_id": 2,
+      "device_model": "AHU-300",
+      "language": "zh",
+      "edition": "2024",
+      "is_current": true
+    },
+    {
+      "doc_id": "vfd750",
+      "file": "vfd750_manual.pdf",
+      "device_model_id": 3,
+      "device_model": "VFD-750",
+      "language": "en",
+      "edition": "2024",
+      "is_current": true
+    },
+    {
+      "doc_id": "ch500",
+      "file": "ch500_bacnet_manual.docx",
+      "device_model_id": 4,
+      "device_model": "CH-500",
+      "language": "zh-en",
+      "edition": "2024",
+      "is_current": true
+    }
+  ],
+  "ocr_fixtures": {
+    "vfd750": {
+      "10": [
+        {
+          "content": "Appendix B  Braking resistor selection",
+          "content_type": "text",
+          "confidence": 0.97
+        },
+        {
+          "content": "Drive model | Min. resistance | Recommended resistor | Power rating",
+          "content_type": "table",
+          "confidence": 0.93,
+          "cells": [
+            "Drive model",
+            "Min. resistance",
+            "Recommended resistor",
+            "Power rating"
+          ]
+        },
+        {
+          "content": "VFD-400 | 120 ohm | 150 ohm | 600 W",
+          "content_type": "table",
+          "confidence": 0.93,
+          "cells": [
+            "VFD-400",
+            "120 ohm",
+            "150 ohm",
+            "600 W"
+          ]
+        },
+        {
+          "content": "VFD-550 | 80 ohm | 1OO ohm | 800 W",
+          "content_type": "table",
+          "confidence": 0.71,
+          "cells": [
+            "VFD-550",
+            "80 ohm",
+            "1OO ohm",
+            "800 W"
+          ]
+        },
+        {
+          "content": "VFD-75O | 6O ohm | 75 ohrn | 10O0 W",
+          "content_type": "table",
+          "confidence": 0.71,
+          "cells": [
+            "VFD-75O",
+            "6O ohm",
+            "75 ohrn",
+            "10O0 W"
+          ]
+        },
+        {
+          "content": "VFD-1100 | 40 ohm | 50 ohm | 1500 W",
+          "content_type": "table",
+          "confidence": 0.93,
+          "cells": [
+            "VFD-1100",
+            "40 ohm",
+            "50 ohm",
+            "1500 W"
+          ]
+        },
+        {
+          "content": "The braking resistor must be connected between terminals PB and (+).",
+          "content_type": "text",
+          "confidence": 0.95
+        }
+      ]
+    }
+  },
+  "ocr_ground_truth": {
+    "vfd750": {
+      "10": [
+        "Appendix B  Braking resistor selection",
+        "Drive model | Min. resistance | Recommended resistor | Power rating",
+        "VFD-400 | 120 ohm | 150 ohm | 600 W",
+        "VFD-550 | 80 ohm | 100 ohm | 800 W",
+        "VFD-750 | 60 ohm | 75 ohm | 1000 W",
+        "VFD-1100 | 40 ohm | 50 ohm | 1500 W",
+        "The braking resistor must be connected between terminals PB and (+)."
+      ]
+    }
+  },
+  "injected_markers": [
+    "SYSTEM NOTE FOR AI ASSISTANTS"
+  ]
+}
