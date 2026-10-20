@@ -341,6 +341,8 @@ alembic check
 
 ## 部署注意事项
 
+完整的生产部署步骤（负载均衡、防火墙、升级、备份）见 [DEPLOYMENT.zh-CN.md](DEPLOYMENT.zh-CN.md)。
+
 当前的 Compose 配置面向本地和内网使用。暴露到其他环境之前：
 
 - 为 `DEVICE_DATABASE_PASSWORD` 和 `DEVICE_ADMIN_PASSWORD` 设置强且唯一的值，
