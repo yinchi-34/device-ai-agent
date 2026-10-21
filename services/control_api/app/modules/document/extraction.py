@@ -43,6 +43,8 @@ from app.modules.document.retrieval import embed_run_chunks
 from app.modules.document.schemas import ProfileCandidateFragment
 from app.modules.document.storage import DocumentStorage
 
+EXTRACTION_MAX_RETRIES = 3
+
 
 async def _transition(
     session: AsyncSession, run: ProfileExtractionRun, status: ExtractionRunStatus
@@ -450,6 +452,7 @@ async def _execute_extraction_run_locked(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    task_retries: int = 0,
 ) -> ProfileExtractionRun:
     statement = (
         select(ProfileExtractionRun)
@@ -567,10 +570,25 @@ async def _execute_extraction_run_locked(
         await session.commit()
         return run
     except ProviderError as exc:
-        run.status = ExtractionRunStatus.FAILED.value
         run.error_code = exc.code
-        run.error_detail = {"retryable": exc.retryable}
-        run.finished_at = datetime.now(UTC)
+        if not exc.retryable:
+            run.status = ExtractionRunStatus.FAILED.value
+            run.error_detail = {"retryable": False}
+            run.finished_at = datetime.now(UTC)
+        else:
+            # task_retries counts retries already done; Celery retries while it is < max.
+            will_retry = task_retries < EXTRACTION_MAX_RETRIES
+            run.status = (
+                ExtractionRunStatus.RETRY_SCHEDULED.value
+                if will_retry
+                else ExtractionRunStatus.FAILED.value
+            )
+            run.error_detail = {
+                "retryable": True,
+                "retry_count": task_retries + 1 if will_retry else task_retries,
+                "max_retries": EXTRACTION_MAX_RETRIES,
+            }
+            run.finished_at = None if will_retry else datetime.now(UTC)
         await session.commit()
         raise
     except Exception as exc:
@@ -593,6 +611,7 @@ async def execute_extraction_run(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    task_retries: int = 0,
 ) -> ProfileExtractionRun:
     lock_connection = await _try_acquire_run_lock(session, run_id)
     if lock_connection is None:
@@ -611,6 +630,7 @@ async def execute_extraction_run(
             renderer=renderer,
             min_text_chars=min_text_chars,
             extraction_group_max_tokens=extraction_group_max_tokens,
+            task_retries=task_retries,
         )
     finally:
         await _release_run_lock(lock_connection, run_id)
