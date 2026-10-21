@@ -53,6 +53,7 @@ _ACTIVE_RUN_STATUSES = {
     ExtractionRunStatus.PARSING.value,
     ExtractionRunStatus.EXTRACTING.value,
     ExtractionRunStatus.VALIDATING_OUTPUT.value,
+    ExtractionRunStatus.RETRY_SCHEDULED.value,
     ExtractionRunStatus.IMPORTING.value,
 }
 

@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
@@ -10,6 +11,7 @@ from app.modules.document.review_service import (
 __all__ = [
     "DocumentService",
     "create_extraction_run",
+    "find_or_create_extraction_run",
     "retry_extraction_run",
 ]
 
@@ -49,6 +51,39 @@ async def create_extraction_run(
     session.add(run)
     await session.flush()
     return run
+
+
+_FINISHED_STATUSES = (
+    ExtractionRunStatus.COMPLETED.value,
+    ExtractionRunStatus.FAILED.value,
+    ExtractionRunStatus.CANCELED.value,
+)
+
+
+async def find_or_create_extraction_run(
+    session: AsyncSession, source_document_id: int, **run_options: str | None
+) -> tuple[ProfileExtractionRun, bool]:
+    """Return (run, created); reuse the document's unfinished run if any."""
+    # Row lock serializes concurrent submits until the winner commits.
+    await session.scalar(
+        select(SourceDocument.id)
+        .where(SourceDocument.id == source_document_id)
+        .with_for_update()
+    )
+    active = await session.scalar(
+        select(ProfileExtractionRun)
+        .where(
+            ProfileExtractionRun.source_document_id == source_document_id,
+            ProfileExtractionRun.status.not_in(_FINISHED_STATUSES),
+        )
+        .order_by(ProfileExtractionRun.id.desc())
+        .limit(1)
+    )
+    if active is not None:
+        return active, False
+    return await create_extraction_run(
+        session, source_document_id, **run_options
+    ), True
 
 
 async def retry_extraction_run(
