@@ -17,7 +17,7 @@ class TransientProviderError(RuntimeError):
     pass
 
 
-async def _execute(run_id: int) -> None:
+async def _execute(run_id: int, *, retries: int, max_retries: int) -> None:
     settings = Settings()
     async with async_session_factory() as session:
         try:
@@ -48,6 +48,8 @@ async def _execute(run_id: int) -> None:
                 extraction_group_max_tokens=(
                     settings.document_extraction_group_max_tokens
                 ),
+                retries=retries,
+                max_retries=max_retries,
             )
         except ProviderError as exc:
             if exc.retryable:
@@ -56,11 +58,14 @@ async def _execute(run_id: int) -> None:
 
 
 @celery_app.task(
+    bind=True,
     name="document.extract",
     autoretry_for=(TransientProviderError,),
     retry_backoff=True,
     retry_jitter=True,
     max_retries=3,
 )
-def extract_document(run_id: int) -> None:
-    asyncio.run(_execute(run_id))
+def extract_document(self, run_id: int) -> None:
+    asyncio.run(
+        _execute(run_id, retries=self.request.retries, max_retries=self.max_retries)
+    )
