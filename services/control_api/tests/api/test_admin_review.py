@@ -484,3 +484,42 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"
     assert refreshed.review_note == "wrong device model"
+
+
+async def test_admin_double_click_extract_queues_and_dispatches_once(
+    db_session, monkeypatch
+):
+    from sqlalchemy import func, select
+
+    from app.modules.document import admin_router
+    from app.modules.document.models import ProfileExtractionRun, SourceDocument
+
+    document = SourceDocument(
+        original_file_name="manual.docx",
+        media_type="application/pdf",
+        file_size_bytes=1,
+        file_hash_sha256="0" * 64,
+        storage_uri="original/manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.commit()
+    dispatched = []
+    monkeypatch.setattr(admin_router, "dispatch_extraction_task", dispatched.append)
+    monkeypatch.setenv("DEVICE_ADMIN_USERNAME", "reviewer")
+    monkeypatch.setenv("DEVICE_ADMIN_PASSWORD", "review-secret")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()),
+        base_url="http://test",
+        auth=("reviewer", "review-secret"),
+    ) as client:
+        await client.get("/admin/documents")
+        token = client.cookies.get("admin_csrf")
+        url = f"/admin/documents/{document.id}/extract"
+        first = await client.post(url, data={"_csrf_token": token})
+        second = await client.post(url, data={"_csrf_token": token})
+
+    assert first.status_code == second.status_code == 303
+    assert await db_session.scalar(select(func.count(ProfileExtractionRun.id))) == 1
+    assert len(dispatched) == 1
