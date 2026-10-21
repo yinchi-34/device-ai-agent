@@ -14,7 +14,11 @@ from app.modules.document.models import (
 )
 from app.modules.document.providers import EmbeddingProvider
 from app.modules.document.retrieval import search_document_chunks
-from app.modules.document.service import create_extraction_run, retry_extraction_run
+from app.modules.document.service import (
+    create_extraction_run,
+    find_active_extraction_run,
+    retry_extraction_run,
+)
 from app.modules.document.storage import (
     FileSystemDocumentStorage,
     validate_and_promote,
@@ -71,9 +75,15 @@ class DocumentApplicationService:
             )
         return document
 
-    async def queue_extraction(self, document_id: int) -> ProfileExtractionRun:
+    async def queue_extraction(
+        self, document_id: int
+    ) -> tuple[ProfileExtractionRun, bool]:
+        """Return (run, created); reuse the document's unfinished run if any."""
         await self.get_document(document_id)
-        return await create_extraction_run(
+        active = await find_active_extraction_run(self.session, document_id)
+        if active is not None:
+            return active, False
+        run = await create_extraction_run(
             self.session,
             document_id,
             extraction_provider="openai_compatible",
@@ -83,6 +93,7 @@ class DocumentApplicationService:
             embedding_provider="openai_compatible",
             embedding_model=self.settings.document_embedding_model,
         )
+        return run, True
 
     async def get_run(self, run_id: int) -> ProfileExtractionRun:
         run = await self.session.get(ProfileExtractionRun, run_id)

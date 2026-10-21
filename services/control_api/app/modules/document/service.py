@@ -1,7 +1,11 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
-from app.modules.document.enums import ExtractionRunStatus
+from app.modules.document.enums import (
+    TERMINAL_EXTRACTION_RUN_STATUSES,
+    ExtractionRunStatus,
+)
 from app.modules.document.models import ProfileExtractionRun, SourceDocument
 from app.modules.document.review_service import (
     DocumentReviewService as DocumentService,
@@ -10,6 +14,7 @@ from app.modules.document.review_service import (
 __all__ = [
     "DocumentService",
     "create_extraction_run",
+    "find_active_extraction_run",
     "retry_extraction_run",
 ]
 
@@ -49,6 +54,30 @@ async def create_extraction_run(
     session.add(run)
     await session.flush()
     return run
+
+
+async def find_active_extraction_run(
+    session: AsyncSession, source_document_id: int
+) -> ProfileExtractionRun | None:
+    """Return the document's unfinished run, serializing concurrent callers.
+
+    Locks the SourceDocument row until the caller's transaction ends, so a
+    second request waits for the first one's run to be committed.
+    """
+    await session.execute(
+        select(SourceDocument.id)
+        .where(SourceDocument.id == source_document_id)
+        .with_for_update()
+    )
+    return await session.scalar(
+        select(ProfileExtractionRun)
+        .where(
+            ProfileExtractionRun.source_document_id == source_document_id,
+            ProfileExtractionRun.status.not_in(TERMINAL_EXTRACTION_RUN_STATUSES),
+        )
+        .order_by(ProfileExtractionRun.id.desc())
+        .limit(1)
+    )
 
 
 async def retry_extraction_run(
