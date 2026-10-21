@@ -480,3 +480,66 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+async def _run_with_failure(db_session, tmp_path, error, retries):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [error] * 20
+    kwargs = {
+        "storage": FileSystemDocumentStorage(tmp_path),
+        "extraction_provider": extraction,
+        "vision_provider": FakeVisionOcrProvider([]),
+        "embedding_provider": embedding,
+        "celery_retries": retries,
+    }
+    with pytest.raises(ProviderError):
+        await execute_extraction_run(db_session, run.id, **kwargs)
+    await db_session.refresh(run)
+    return run, kwargs
+
+
+@pytest.mark.parametrize("retries", [0, 1, 2])
+async def test_retryable_error_schedules_retry(db_session, tmp_path, retries):
+    run, _ = await _run_with_failure(
+        db_session, tmp_path, ProviderError("provider_rate_limited", retryable=True), retries
+    )
+
+    assert run.status == "retry_scheduled"
+    assert run.error_code == "provider_rate_limited"
+    assert run.error_detail["retry_count"] == retries + 1
+    assert run.error_detail["max_retries"] == 3
+    assert run.finished_at is None
+
+
+async def test_retryable_error_fails_after_retries_exhausted(db_session, tmp_path):
+    run, _ = await _run_with_failure(
+        db_session, tmp_path, ProviderError("provider_rate_limited", retryable=True), 3
+    )
+
+    assert run.status == "failed"
+    assert run.error_detail["retry_count"] == 3
+    assert run.finished_at is not None
+
+
+async def test_non_retryable_error_fails_immediately(db_session, tmp_path):
+    run, _ = await _run_with_failure(
+        db_session, tmp_path, ProviderError("provider_auth", retryable=False), 0
+    )
+
+    assert run.status == "failed"
+    assert "retry_count" not in run.error_detail
+
+
+async def test_retry_then_success_completes(db_session, tmp_path):
+    run, kwargs = await _run_with_failure(
+        db_session, tmp_path, ProviderError("provider_rate_limited", retryable=True), 0
+    )
+    assert run.status == "retry_scheduled"
+    kwargs["extraction_provider"].failures.clear()
+
+    await execute_extraction_run(db_session, run.id, **{**kwargs, "celery_retries": 1})
+
+    await db_session.refresh(run)
+    assert run.status == "awaiting_review"
+    assert run.error_code is None
+    assert run.error_detail == {}
