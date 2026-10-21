@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.modules.device.models import DeviceModel
+from app.modules.document.enums import ExtractionRunStatus
 from app.modules.document.file_validation import DocumentValidationError
 from app.modules.document.models import (
     ProfileExtractionCandidate,
@@ -71,9 +72,33 @@ class DocumentApplicationService:
             )
         return document
 
-    async def queue_extraction(self, document_id: int) -> ProfileExtractionRun:
+    async def queue_extraction(
+        self, document_id: int
+    ) -> tuple[ProfileExtractionRun, bool]:
+        """Return (run, created); reuse the document's unfinished run if any."""
         await self.get_document(document_id)
-        return await create_extraction_run(
+        # Row lock serializes concurrent submits for one document until commit.
+        await self.session.execute(
+            select(SourceDocument.id).where(SourceDocument.id == document_id).with_for_update()
+        )
+        active = await self.session.scalar(
+            select(ProfileExtractionRun)
+            .where(
+                ProfileExtractionRun.source_document_id == document_id,
+                ProfileExtractionRun.status.not_in(
+                    [
+                        ExtractionRunStatus.COMPLETED.value,
+                        ExtractionRunStatus.FAILED.value,
+                        ExtractionRunStatus.CANCELED.value,
+                    ]
+                ),
+            )
+            .order_by(ProfileExtractionRun.id.desc())
+            .limit(1)
+        )
+        if active is not None:
+            return active, False
+        run = await create_extraction_run(
             self.session,
             document_id,
             extraction_provider="openai_compatible",
@@ -83,6 +108,7 @@ class DocumentApplicationService:
             embedding_provider="openai_compatible",
             embedding_model=self.settings.document_embedding_model,
         )
+        return run, True
 
     async def get_run(self, run_id: int) -> ProfileExtractionRun:
         run = await self.session.get(ProfileExtractionRun, run_id)

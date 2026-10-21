@@ -35,3 +35,7 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_extract_task_retries_transient_errors_three_times():
+    assert extract_document.max_retries == 3
