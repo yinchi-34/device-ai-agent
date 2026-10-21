@@ -480,3 +480,105 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+async def run_with_failure(db_session, tmp_path, error, **kwargs):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [error]
+    with pytest.raises(ProviderError):
+        await execute_extraction_run(
+            db_session,
+            run.id,
+            storage=FileSystemDocumentStorage(tmp_path),
+            extraction_provider=extraction,
+            vision_provider=FakeVisionOcrProvider([]),
+            embedding_provider=embedding,
+            **kwargs,
+        )
+    await db_session.refresh(run)
+    return run
+
+
+@pytest.mark.parametrize("retries", [0, 1, 2])
+async def test_retryable_error_schedules_retry(db_session, tmp_path, retries):
+    run = await run_with_failure(
+        db_session,
+        tmp_path,
+        ProviderError("provider_rate_limited", retryable=True),
+        retries=retries,
+        max_retries=3,
+    )
+
+    assert run.status == "retry_scheduled"
+    assert run.error_code == "provider_rate_limited"
+    assert run.error_detail["retry_count"] == retries + 1
+    assert run.error_detail["max_retries"] == 3
+    assert run.finished_at is None
+
+
+async def test_retryable_error_fails_when_retries_exhausted(db_session, tmp_path):
+    run = await run_with_failure(
+        db_session,
+        tmp_path,
+        ProviderError("provider_rate_limited", retryable=True),
+        retries=3,
+        max_retries=3,
+    )
+
+    assert run.status == "failed"
+    assert run.error_code == "provider_rate_limited"
+    assert run.error_detail["retry_count"] == 3
+    assert run.error_detail["max_retries"] == 3
+    assert run.finished_at is not None
+
+
+async def test_non_retryable_error_fails_immediately(db_session, tmp_path):
+    run = await run_with_failure(
+        db_session,
+        tmp_path,
+        ProviderError("provider_auth_failed", retryable=False),
+        retries=0,
+        max_retries=3,
+    )
+
+    assert run.status == "failed"
+    assert run.error_code == "provider_auth_failed"
+    assert "retry_count" not in run.error_detail
+
+
+async def test_retry_scheduled_run_completes_when_retry_succeeds(db_session, tmp_path):
+    run = await run_with_failure(
+        db_session,
+        tmp_path,
+        ProviderError("provider_rate_limited", retryable=True),
+        retries=0,
+        max_retries=3,
+    )
+    assert run.status == "retry_scheduled"
+    _, extraction, embedding = await pipeline_setup_reuse(db_session, run, tmp_path)
+
+    await execute_extraction_run(
+        db_session,
+        run.id,
+        storage=FileSystemDocumentStorage(tmp_path),
+        extraction_provider=extraction,
+        vision_provider=FakeVisionOcrProvider([]),
+        embedding_provider=embedding,
+        retries=1,
+        max_retries=3,
+    )
+
+    await db_session.refresh(run)
+    assert run.status == "awaiting_review"
+    assert run.error_code is None
+    assert run.error_detail == {}
+
+
+async def pipeline_setup_reuse(db_session, run, tmp_path):
+    extraction = FakeExtractionProvider(
+        ExtractionResult(candidate_payload(), {"id": "response"}, {})
+    )
+    embedding = FakeEmbeddingProvider(
+        EmbeddingResult([[1.0, 0.0, 0.0]], "fake", "embed-v1", 3, {})
+    )
+    return run, extraction, embedding
