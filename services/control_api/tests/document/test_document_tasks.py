@@ -35,3 +35,22 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_task_passes_celery_retry_number_and_stops_after_max_retries(monkeypatch):
+    from app.modules.document import tasks
+    from app.modules.document.providers import ProviderError
+
+    seen = []
+
+    async def always_unavailable(session, run_id, **kwargs):
+        seen.append(kwargs["retries"])
+        raise ProviderError("provider_unavailable", retryable=True)
+
+    monkeypatch.setattr(tasks, "execute_extraction_run", always_unavailable)
+    monkeypatch.setattr(extract_document, "retry_backoff", False)
+
+    result = extract_document.apply(args=(1,))
+
+    assert seen == [0, 1, 2, 3]
+    assert isinstance(result.result, ProviderError)

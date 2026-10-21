@@ -243,11 +243,15 @@ async def document_content(
 async def extract_document(
     document_id: int, session: AsyncSession = Depends(get_db_session)
 ) -> RedirectResponse:
-    run = await DocumentApplicationService(session).queue_extraction(document_id)
+    run, created = await DocumentApplicationService(session).queue_extraction(
+        document_id
+    )
     await session.commit()
-    dispatch_extraction_task(run.id)
+    if created:
+        dispatch_extraction_task(run.id)
+    message = "extraction-queued" if created else "extraction-already-running"
     return RedirectResponse(
-        f"/admin/documents/{document_id}?message=extraction-queued", status_code=303
+        f"/admin/documents/{document_id}?message={message}", status_code=303
     )
 
 
