@@ -35,3 +35,20 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_celery_retries_transient_errors_at_most_three_times(monkeypatch):
+    from app.modules.document import tasks
+
+    seen = []
+
+    async def failing_execute(run_id, retries=0):
+        seen.append(retries)
+        raise tasks.TransientProviderError("provider_timeout")
+
+    monkeypatch.setattr(tasks, "_execute", failing_execute)
+
+    result = extract_document.apply(args=[1])
+
+    assert seen == [0, 1, 2, 3]
+    assert result.failed()

@@ -484,3 +484,32 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"
     assert refreshed.review_note == "wrong device model"
+
+
+async def test_admin_start_extraction_double_click_creates_one_run(
+    db_session, monkeypatch
+):
+    from app.modules.document import admin_router
+
+    dispatched = []
+    monkeypatch.setattr(admin_router, "dispatch_extraction_task", dispatched.append)
+    document = SourceDocument(
+        original_file_name="manual.docx",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="a" * 64,
+        storage_uri="original/manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as admin:
+        url = f"/admin/documents/{document.id}/extract"
+        first = await admin.post(url)
+        second = await admin.post(url)
+
+    assert first.status_code == second.status_code == 303
+    runs = (await db_session.scalars(select(ProfileExtractionRun))).all()
+    assert len(runs) == 1
+    assert dispatched == [runs[0].id]
