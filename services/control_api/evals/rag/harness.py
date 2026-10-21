@@ -463,11 +463,49 @@ def _truncate_to_budget(texts: Sequence[str], budget: int) -> str:
 class RunConfig:
     name: str
     strategy: str = "baseline"
-    retriever: str = "bm25"  # bm25 | bm25u | dense | hybrid
+    retriever: str = "bm25"  # bm25 | bm25u | rrf_lex | dense | hybrid
     dedupe: bool = False
+    parent_expand: bool = False  # parent-child: rank children, return their section (small-to-big)
+    parent_max_tokens: int = 1200  # sections larger than this fall back to a +/-2 child window
+    parent_topn: int | None = None  # expand only the first N hits (budget-aware small-to-big)
     current_only: bool = False
     retry_runs: int = 1
     scoped: bool = True
+
+
+def _build_parents(chunks: list[EvalChunk], keys: list[str], max_tokens: int) -> dict[int, int]:
+    """Append parent pseudo-chunks (one per section) and map every child index to its parent.
+
+    A section is identified by the breadcrumb line the structured chunker puts on every
+    chunk. Sections above ``max_tokens`` fall back to a window of +/-2 neighbouring
+    children so a single hit cannot pull a whole 300-row register table into context.
+    """
+    sections: dict[tuple, list[int]] = defaultdict(list)
+    for i, c in enumerate(chunks):
+        sections[(c.doc_id, c.run, c.content.split("\n", 1)[0])].append(i)
+    parent_of: dict[int, int] = {}
+    n_children = len(chunks)
+    for (_doc, _run, crumb), members in sections.items():
+        bodies = list(dict.fromkeys(chunks[i].content.split("\n", 1)[-1] for i in members))
+        whole = crumb + "\n" + "\n".join(bodies)
+        if estimate_tokens(whole) <= max_tokens:
+            pidx = len(chunks)
+            chunks.append(EvalChunk(**{**chunks[members[0]].__dict__, "flags": set(), "content": whole,
+                                       "stable_ref": f"parent:{crumb[:40]}", "content_type": "section"}))
+            keys.append(match_key(whole))
+            for i in members:
+                parent_of[i] = pidx
+            continue
+        for pos, i in enumerate(members):
+            window = members[max(0, pos - 2): pos + 3]
+            text = crumb + "\n" + "\n".join(dict.fromkeys(chunks[j].content.split("\n", 1)[-1] for j in window))
+            pidx = len(chunks)
+            chunks.append(EvalChunk(**{**chunks[i].__dict__, "flags": set(), "content": text,
+                                       "stable_ref": f"window:{chunks[i].stable_ref}", "content_type": "window"}))
+            keys.append(match_key(text))
+            parent_of[i] = pidx
+    assert all(i in parent_of for i in range(n_children))
+    return parent_of
 
 
 def load_cases() -> list[dict]:
@@ -483,10 +521,12 @@ def evaluate_run(cfg: RunConfig, manifest: dict, parsed: dict, cases: list[dict]
     chunks = build_index_chunks(manifest, parsed, cfg.strategy, retry_runs=cfg.retry_runs)
     keys = [match_key(c.content) for c in chunks]
     retrievers = {}
-    if cfg.retriever in {"bm25", "hybrid"}:
+    if cfg.retriever in {"bm25", "hybrid", "rrf_lex"}:
         retrievers["bm25"] = BM25(chunks)
-    if cfg.retriever == "bm25u":
+    if cfg.retriever in {"bm25u", "rrf_lex"}:
         retrievers["bm25u"] = BM25(chunks, tokenizer=tokenize_unigram)
+    n_children = len(chunks)
+    parent_of = _build_parents(chunks, keys, cfg.parent_max_tokens) if cfg.parent_expand else {}
     if cfg.retriever in {"dense", "hybrid"}:
         retrievers["dense"] = DenseOpenAICompatible(chunks)
     markers = [match_key(x) for x in manifest.get("injected_markers", [])]
@@ -494,7 +534,7 @@ def evaluate_run(cfg: RunConfig, manifest: dict, parsed: dict, cases: list[dict]
     per_query = []
     for case in cases:
         scope = [
-            i for i, c in enumerate(chunks)
+            i for i, c in enumerate(chunks[:n_children])
             if (not cfg.scoped or c.device_model_id == case["device_model_id"])
             and (not cfg.current_only or c.is_current)
         ]
@@ -504,10 +544,11 @@ def evaluate_run(cfg: RunConfig, manifest: dict, parsed: dict, cases: list[dict]
             sc = retriever.scores(case["query"], scope)
             raw_scores[name] = sc
             rankings[name] = sorted(scope, key=lambda i: (-sc[i], i))
-        if cfg.retriever == "hybrid":
-            fused = rrf_fuse([rankings["bm25"], rankings["dense"]])
+        if cfg.retriever in {"hybrid", "rrf_lex"}:
+            other = "dense" if cfg.retriever == "hybrid" else "bm25u"
+            fused = rrf_fuse([rankings["bm25"], rankings[other]])
             ranking = sorted(scope, key=lambda i: (-fused.get(i, 0.0), i))
-            top_score = raw_scores["dense"][ranking[0]] if ranking else 0.0
+            top_score = fused.get(ranking[0], 0.0) if ranking else 0.0
         else:
             ranking = rankings[cfg.retriever]
             top_score = raw_scores[cfg.retriever][ranking[0]] if ranking else 0.0
@@ -519,6 +560,15 @@ def evaluate_run(cfg: RunConfig, manifest: dict, parsed: dict, cases: list[dict]
                     seen.add(h)
                     deduped.append(i)
             ranking = deduped
+        if parent_of:
+            seen_p, expanded = set(), []
+            for pos, i in enumerate(ranking):
+                pi = parent_of[i] if cfg.parent_topn is None or pos < cfg.parent_topn else i
+                if pi in seen_p or (pi == i and parent_of[i] in seen_p):
+                    continue  # child already contained in an expanded parent
+                seen_p.add(pi)
+                expanded.append(pi)
+            ranking = expanded
         top = ranking[: max(KS)]
         groups = case["evidence"]
         gpr = [{g for g, grp in enumerate(groups) if _covers(keys[i], grp)} for i in top]
@@ -556,6 +606,7 @@ def evaluate_run(cfg: RunConfig, manifest: dict, parsed: dict, cases: list[dict]
         if case["distractors"]:
             dk = [match_key(d) for d in case["distractors"]]
             row["distractor@5"] = float(any(any(d in keys[i] for d in dk) for i in top[:5]))
+        row["ctx_tokens@5"] = sum(estimate_tokens(chunks[i].content) for i in top[:5])
         row["dup_rate@5"] = m.duplicate_rate([chunks[i].content_hash for i in top[:5]])
         if case["device_model_id"] == 3 or case["category"] == "injection":
             row["injection_exposed@5"] = float(any(any(mk in keys[i] for mk in markers) for i in top[:5]))
