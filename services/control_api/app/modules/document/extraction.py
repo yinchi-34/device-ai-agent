@@ -450,6 +450,8 @@ async def _execute_extraction_run_locked(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    retries: int = 0,
+    max_retries: int = 0,
 ) -> ProfileExtractionRun:
     statement = (
         select(ProfileExtractionRun)
@@ -567,10 +569,17 @@ async def _execute_extraction_run_locked(
         await session.commit()
         return run
     except ProviderError as exc:
-        run.status = ExtractionRunStatus.FAILED.value
+        will_retry = exc.retryable and retries < max_retries
         run.error_code = exc.code
         run.error_detail = {"retryable": exc.retryable}
-        run.finished_at = datetime.now(UTC)
+        if exc.retryable and max_retries:
+            run.error_detail["retry_count"] = retries + 1 if will_retry else retries
+            run.error_detail["max_retries"] = max_retries
+        if will_retry:
+            run.status = ExtractionRunStatus.RETRY_SCHEDULED.value
+        else:
+            run.status = ExtractionRunStatus.FAILED.value
+            run.finished_at = datetime.now(UTC)
         await session.commit()
         raise
     except Exception as exc:
@@ -593,6 +602,8 @@ async def execute_extraction_run(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    retries: int = 0,
+    max_retries: int = 0,
 ) -> ProfileExtractionRun:
     lock_connection = await _try_acquire_run_lock(session, run_id)
     if lock_connection is None:
@@ -611,6 +622,8 @@ async def execute_extraction_run(
             renderer=renderer,
             min_text_chars=min_text_chars,
             extraction_group_max_tokens=extraction_group_max_tokens,
+            retries=retries,
+            max_retries=max_retries,
         )
     finally:
         await _release_run_lock(lock_connection, run_id)

@@ -1,7 +1,9 @@
 import subprocess
 import sys
 
+from app.modules.document import tasks
 from app.modules.document.celery_app import celery_app
+from app.modules.document.providers import ProviderError
 from app.modules.document.tasks import extract_document
 
 
@@ -35,3 +37,18 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_task_retries_transient_errors_three_times_with_retry_counts(monkeypatch):
+    seen = []
+
+    async def fake_execute(session, run_id, **kwargs):
+        seen.append((kwargs["retries"], kwargs["max_retries"]))
+        raise ProviderError("provider_timeout", retryable=True)
+
+    monkeypatch.setattr(tasks, "execute_extraction_run", fake_execute)
+
+    result = extract_document.apply(args=[1])
+
+    assert seen == [(0, 3), (1, 3), (2, 3), (3, 3)]
+    assert isinstance(result.result, tasks.TransientProviderError)

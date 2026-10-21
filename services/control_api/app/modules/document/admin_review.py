@@ -17,6 +17,7 @@ EXTRACTION_RUN_LABELS = {
     ExtractionRunStatus.COMPLETED.value: "已完成",
     ExtractionRunStatus.FAILED.value: "处理失败",
     ExtractionRunStatus.CANCELED.value: "已取消",
+    ExtractionRunStatus.RETRY_SCHEDULED.value: "等待自动重试",
 }
 
 
