@@ -12,11 +12,19 @@ class ExtractionRunStatus(StrEnum):
     PARSING = "parsing"
     EXTRACTING = "extracting"
     VALIDATING_OUTPUT = "validating_output"
+    RETRY_SCHEDULED = "retry_scheduled"
     AWAITING_REVIEW = "awaiting_review"
     IMPORTING = "importing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
+
+
+TERMINAL_RUN_STATUSES = (
+    ExtractionRunStatus.COMPLETED,
+    ExtractionRunStatus.FAILED,
+    ExtractionRunStatus.CANCELED,
+)
 
 
 class CandidateStatus(StrEnum):
