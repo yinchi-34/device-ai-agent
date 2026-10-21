@@ -14,6 +14,7 @@ class ExtractionRunStatus(StrEnum):
     VALIDATING_OUTPUT = "validating_output"
     AWAITING_REVIEW = "awaiting_review"
     IMPORTING = "importing"
+    RETRY_SCHEDULED = "retry_scheduled"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"

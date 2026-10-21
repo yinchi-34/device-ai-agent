@@ -16,6 +16,7 @@ def test_celery_uses_durable_json_tasks():
 def test_extract_task_accepts_only_run_identifier():
     assert extract_document.name == "document.extract"
     assert list(extract_document.run.__annotations__) == ["run_id", "return"]
+    assert extract_document.max_retries == 3
 
 
 def test_worker_default_modules_register_extraction_task():
