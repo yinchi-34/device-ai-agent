@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from httpx import ASGITransport, AsyncClient
@@ -484,3 +485,35 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"
     assert refreshed.review_note == "wrong device model"
+
+
+async def test_admin_extract_button_is_idempotent(db_session, monkeypatch):
+    document = SourceDocument(
+        original_file_name="manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="a" * 64,
+        storage_uri="original/aa/manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.commit()
+    dispatched = []
+    monkeypatch.setattr(
+        "app.modules.document.admin_router.dispatch_extraction_task",
+        dispatched.append,
+    )
+
+    async with await _admin_client(monkeypatch) as client:
+        responses = [
+            await client.post(f"/admin/documents/{document.id}/extract")
+            for _ in range(2)
+        ]
+        responses += await asyncio.gather(
+            *(client.post(f"/admin/documents/{document.id}/extract") for _ in range(4))
+        )
+
+    assert {r.status_code for r in responses} == {303}
+    runs = (await db_session.scalars(select(ProfileExtractionRun))).all()
+    assert len(runs) == 1
+    assert dispatched == [runs[0].id]
