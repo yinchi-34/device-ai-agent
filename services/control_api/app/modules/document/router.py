@@ -74,10 +74,15 @@ async def get_document(
     response_model=schemas.ExtractionRunOut,
 )
 async def queue_extraction(
-    document_id: int, session: AsyncSession = Depends(get_db_session)
+    document_id: int, response: Response, session: AsyncSession = Depends(get_db_session)
 ) -> object:
-    run = await DocumentApplicationService(session).queue_extraction(document_id)
+    run, created = await DocumentApplicationService(session).queue_extraction(
+        document_id
+    )
     await session.commit()
+    if not created:
+        response.status_code = 200
+        return run
     dispatch_extraction_task(run.id)
     return run
 
