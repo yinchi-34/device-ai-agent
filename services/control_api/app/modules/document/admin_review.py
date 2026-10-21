@@ -15,6 +15,7 @@ EXTRACTION_RUN_LABELS = {
     ExtractionRunStatus.AWAITING_REVIEW.value: "等待人工审核",
     ExtractionRunStatus.IMPORTING.value: "导入中",
     ExtractionRunStatus.COMPLETED.value: "已完成",
+    ExtractionRunStatus.RETRY_SCHEDULED.value: "等待自动重试",
     ExtractionRunStatus.FAILED.value: "处理失败",
     ExtractionRunStatus.CANCELED.value: "已取消",
 }

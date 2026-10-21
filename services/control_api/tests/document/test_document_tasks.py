@@ -35,3 +35,18 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_extract_task_passes_celery_retry_count_to_pipeline(monkeypatch):
+    from app.modules.document import tasks
+
+    seen = []
+
+    async def fake_execute(run_id, retry_count):
+        seen.append((run_id, retry_count))
+
+    monkeypatch.setattr(tasks, "_execute", fake_execute)
+    extract_document.apply(args=(7,))
+
+    assert seen == [(7, 0)]
+    assert extract_document.max_retries == 3

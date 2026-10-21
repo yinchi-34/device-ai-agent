@@ -480,3 +480,58 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+async def _run_with_error(db_session, tmp_path, error, **retry):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [error]
+    with pytest.raises(ProviderError):
+        await execute_extraction_run(
+            db_session,
+            run.id,
+            storage=FileSystemDocumentStorage(tmp_path),
+            extraction_provider=extraction,
+            vision_provider=FakeVisionOcrProvider([]),
+            embedding_provider=embedding,
+            max_retries=3,
+            **retry,
+        )
+    await db_session.refresh(run)
+    return run
+
+
+async def test_retryable_error_schedules_retry(db_session, tmp_path):
+    run = await _run_with_error(
+        db_session,
+        tmp_path,
+        ProviderError("provider_rate_limited", retryable=True),
+        retry_count=1,
+    )
+
+    assert run.status == "retry_scheduled"
+    assert run.error_code == "provider_rate_limited"
+    assert run.error_detail["retry_count"] == 2
+    assert run.error_detail["max_retries"] == 3
+    assert run.finished_at is None
+
+
+async def test_retryable_error_fails_after_max_retries(db_session, tmp_path):
+    run = await _run_with_error(
+        db_session,
+        tmp_path,
+        ProviderError("provider_rate_limited", retryable=True),
+        retry_count=3,
+    )
+
+    assert run.status == "failed"
+    assert run.error_detail["retry_count"] == 3
+    assert run.error_detail["max_retries"] == 3
+
+
+async def test_non_retryable_error_fails_immediately(db_session, tmp_path):
+    run = await _run_with_error(
+        db_session, tmp_path, ProviderError("provider_auth_error"), retry_count=0
+    )
+
+    assert run.status == "failed"
+    assert run.error_code == "provider_auth_error"
