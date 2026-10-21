@@ -14,6 +14,7 @@ EXTRACTION_RUN_LABELS = {
     ExtractionRunStatus.VALIDATING_OUTPUT.value: "校验 AI 结果中",
     ExtractionRunStatus.AWAITING_REVIEW.value: "等待人工审核",
     ExtractionRunStatus.IMPORTING.value: "导入中",
+    ExtractionRunStatus.RETRY_SCHEDULED.value: "等待自动重试",
     ExtractionRunStatus.COMPLETED.value: "已完成",
     ExtractionRunStatus.FAILED.value: "处理失败",
     ExtractionRunStatus.CANCELED.value: "已取消",
@@ -54,6 +55,7 @@ _ACTIVE_RUN_STATUSES = {
     ExtractionRunStatus.EXTRACTING.value,
     ExtractionRunStatus.VALIDATING_OUTPUT.value,
     ExtractionRunStatus.IMPORTING.value,
+    ExtractionRunStatus.RETRY_SCHEDULED.value,
 }
 
 _CANDIDATE_STATUS_MAP = {
