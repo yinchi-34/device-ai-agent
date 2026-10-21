@@ -57,6 +57,12 @@ async def retry_extraction_run(
     failed_run = await session.get(ProfileExtractionRun, failed_run_id)
     if failed_run is None:
         raise DomainError("not_found", f"Extraction run {failed_run_id} not found", 404)
+    if failed_run.status == ExtractionRunStatus.RETRY_SCHEDULED.value:
+        raise DomainError(
+            "extraction_run_retry_scheduled",
+            "Run is waiting for automatic retry",
+            409,
+        )
     if failed_run.status != ExtractionRunStatus.FAILED.value:
         raise DomainError(
             "extraction_run_not_failed", "Only a failed run can be retried", 409

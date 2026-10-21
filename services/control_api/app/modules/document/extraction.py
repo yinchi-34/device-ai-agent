@@ -43,6 +43,8 @@ from app.modules.document.retrieval import embed_run_chunks
 from app.modules.document.schemas import ProfileCandidateFragment
 from app.modules.document.storage import DocumentStorage
 
+MAX_AUTO_RETRIES = 3
+
 
 async def _transition(
     session: AsyncSession, run: ProfileExtractionRun, status: ExtractionRunStatus
@@ -450,6 +452,7 @@ async def _execute_extraction_run_locked(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    celery_retries: int | None = None,
 ) -> ProfileExtractionRun:
     statement = (
         select(ProfileExtractionRun)
@@ -567,10 +570,23 @@ async def _execute_extraction_run_locked(
         await session.commit()
         return run
     except ProviderError as exc:
-        run.status = ExtractionRunStatus.FAILED.value
         run.error_code = exc.code
         run.error_detail = {"retryable": exc.retryable}
-        run.finished_at = datetime.now(UTC)
+        # celery_retries is None outside a Celery task: no auto-retry follows.
+        if exc.retryable and celery_retries is not None:
+            run.error_detail.update(
+                retry_count=min(celery_retries + 1, MAX_AUTO_RETRIES),
+                max_retries=MAX_AUTO_RETRIES,
+            )
+        if (
+            exc.retryable
+            and celery_retries is not None
+            and celery_retries < MAX_AUTO_RETRIES
+        ):
+            run.status = ExtractionRunStatus.RETRY_SCHEDULED.value
+        else:
+            run.status = ExtractionRunStatus.FAILED.value
+            run.finished_at = datetime.now(UTC)
         await session.commit()
         raise
     except Exception as exc:
@@ -593,6 +609,7 @@ async def execute_extraction_run(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    celery_retries: int | None = None,
 ) -> ProfileExtractionRun:
     lock_connection = await _try_acquire_run_lock(session, run_id)
     if lock_connection is None:
@@ -611,6 +628,7 @@ async def execute_extraction_run(
             renderer=renderer,
             min_text_chars=min_text_chars,
             extraction_group_max_tokens=extraction_group_max_tokens,
+            celery_retries=celery_retries,
         )
     finally:
         await _release_run_lock(lock_connection, run_id)
