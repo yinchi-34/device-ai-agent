@@ -484,3 +484,23 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"
     assert refreshed.review_note == "wrong device model"
+
+
+async def test_admin_extract_button_is_idempotent(db_session, monkeypatch, tmp_path):
+    from app.modules.document import admin_router
+    from tests.document.test_extraction_pipeline import pipeline_setup
+
+    run, _, _ = await pipeline_setup(db_session, tmp_path)
+    run.status = "failed"
+    await db_session.commit()
+    dispatched = []
+    monkeypatch.setattr(admin_router, "dispatch_extraction_task", dispatched.append)
+
+    async with await _admin_client(monkeypatch) as client:
+        url = f"/admin/documents/{run.source_document_id}/extract"
+        responses = [await client.post(url) for _ in range(3)]
+
+    runs = (await db_session.scalars(select(ProfileExtractionRun))).all()
+    assert [r.status_code for r in responses] == [303, 303, 303]
+    assert len(runs) == 2
+    assert len(dispatched) == 1

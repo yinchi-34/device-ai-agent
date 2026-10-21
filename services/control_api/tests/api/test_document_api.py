@@ -1,8 +1,11 @@
+import asyncio
 from io import BytesIO
 
 from pypdf import PdfWriter
 
+from app.db.session import async_session_factory
 from app.modules.document import router as document_router
+from app.modules.document.models import ProfileExtractionRun
 from tests.document.test_candidate_review import make_candidate
 from tests.document.test_extraction_pipeline import candidate_payload
 
@@ -91,3 +94,77 @@ async def test_candidate_patch_returns_refreshed_candidate(client, db_session):
     assert response.status_code == 200
     assert response.json()["revision"] == 2
     assert response.json()["updated_at"]
+
+
+async def _upload(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEVICE_DOCUMENT_STORAGE_ROOT", str(tmp_path))
+    response = await client.post(
+        "/api/v1/documents",
+        files={"file": ("manual.pdf", valid_pdf_bytes(), "application/pdf")},
+    )
+    return response.json()["id"]
+
+
+async def test_queue_extraction_is_idempotent_while_run_unfinished(
+    client, monkeypatch, tmp_path
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _upload(client, monkeypatch, tmp_path)
+    url = f"/api/v1/documents/{document_id}/extraction-runs"
+
+    first = await client.post(url)
+    for status in ("retry_scheduled", "awaiting_review"):
+        await _set_status(first.json()["id"], status)
+        again = await client.post(url)
+        assert again.status_code == 200
+        assert again.json()["id"] == first.json()["id"]
+
+    assert first.status_code == 202
+    assert dispatched == [first.json()["id"]]
+
+
+async def test_queue_extraction_creates_new_run_after_terminal_status(
+    client, monkeypatch, tmp_path
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _upload(client, monkeypatch, tmp_path)
+    url = f"/api/v1/documents/{document_id}/extraction-runs"
+    first = await client.post(url)
+
+    for status in ("failed", "completed", "canceled"):
+        await _set_status(first.json()["id"], status)
+        second = await client.post(url)
+        assert second.status_code == 202
+        assert second.json()["id"] != first.json()["id"]
+        await _set_status(second.json()["id"], "failed")
+        first = second
+
+    assert len(dispatched) == 4
+
+
+async def test_concurrent_queue_extraction_creates_one_run(
+    client, monkeypatch, tmp_path
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _upload(client, monkeypatch, tmp_path)
+
+    responses = await asyncio.gather(
+        *[
+            client.post(f"/api/v1/documents/{document_id}/extraction-runs")
+            for _ in range(5)
+        ]
+    )
+
+    assert sorted(r.status_code for r in responses) == [200, 200, 200, 200, 202]
+    assert len({r.json()["id"] for r in responses}) == 1
+    assert len(dispatched) == 1
+
+
+async def _set_status(run_id, status):
+    async with async_session_factory() as session:
+        run = await session.get(ProfileExtractionRun, run_id)
+        run.status = status
+        await session.commit()
