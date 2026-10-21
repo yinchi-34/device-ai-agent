@@ -1,8 +1,12 @@
+import asyncio
 from io import BytesIO
 
+import pytest
 from pypdf import PdfWriter
+from sqlalchemy import func, select
 
 from app.modules.document import router as document_router
+from app.modules.document.models import ProfileExtractionRun
 from tests.document.test_candidate_review import make_candidate
 from tests.document.test_extraction_pipeline import candidate_payload
 
@@ -91,3 +95,125 @@ async def test_candidate_patch_returns_refreshed_candidate(client, db_session):
     assert response.status_code == 200
     assert response.json()["revision"] == 2
     assert response.json()["updated_at"]
+
+
+async def _make_document(db_session):
+    from app.modules.document.models import SourceDocument
+
+    document = SourceDocument(
+        original_file_name="manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="a" * 64,
+        storage_uri="original/manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.commit()
+    return document.id
+
+
+async def test_queue_extraction_is_idempotent_while_run_unfinished(
+    client, db_session, monkeypatch
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _make_document(db_session)
+    url = f"/api/v1/documents/{document_id}/extraction-runs"
+
+    first = await client.post(url)
+    second = await client.post(url)
+
+    assert first.status_code == 202
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert dispatched == [first.json()["id"]]
+
+
+@pytest.mark.parametrize("status", ["retry_scheduled", "awaiting_review", "parsing"])
+async def test_queue_extraction_reuses_any_unfinished_status(
+    client, db_session, monkeypatch, status
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _make_document(db_session)
+    url = f"/api/v1/documents/{document_id}/extraction-runs"
+    first = await client.post(url)
+    run = await db_session.get(ProfileExtractionRun, first.json()["id"])
+    run.status = status
+    await db_session.commit()
+
+    second = await client.post(url)
+
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert len(dispatched) == 1
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "canceled"])
+async def test_queue_extraction_creates_new_run_after_finished(
+    client, db_session, monkeypatch, status
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _make_document(db_session)
+    url = f"/api/v1/documents/{document_id}/extraction-runs"
+    first = await client.post(url)
+    run = await db_session.get(ProfileExtractionRun, first.json()["id"])
+    run.status = status
+    await db_session.commit()
+
+    second = await client.post(url)
+
+    assert second.status_code == 202
+    assert second.json()["id"] != first.json()["id"]
+    assert len(dispatched) == 2
+
+
+async def test_concurrent_queue_extraction_creates_single_run(
+    client, db_session, monkeypatch
+):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _make_document(db_session)
+    url = f"/api/v1/documents/{document_id}/extraction-runs"
+
+    responses = await asyncio.gather(*(client.post(url) for _ in range(5)))
+
+    assert sorted(r.status_code for r in responses) == [200, 200, 200, 200, 202]
+    assert len({r.json()["id"] for r in responses}) == 1
+    assert len(dispatched) == 1
+    count = await db_session.scalar(select(func.count(ProfileExtractionRun.id)))
+    assert count == 1
+
+
+async def test_retry_rejects_retry_scheduled_run(client, db_session, monkeypatch):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _make_document(db_session)
+    first = await client.post(f"/api/v1/documents/{document_id}/extraction-runs")
+    run = await db_session.get(ProfileExtractionRun, first.json()["id"])
+    run.status = "retry_scheduled"
+    await db_session.commit()
+
+    response = await client.post(f"/api/v1/extraction-runs/{run.id}/retry")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "extraction_run_not_retryable"
+    assert len(dispatched) == 1
+
+
+async def test_retry_failed_run_still_creates_new_run(client, db_session, monkeypatch):
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    document_id = await _make_document(db_session)
+    first = await client.post(f"/api/v1/documents/{document_id}/extraction-runs")
+    run = await db_session.get(ProfileExtractionRun, first.json()["id"])
+    run.status = "failed"
+    await db_session.commit()
+
+    response = await client.post(f"/api/v1/extraction-runs/{run.id}/retry")
+
+    assert response.status_code == 202
+    assert response.json()["retry_of_run_id"] == run.id
+    assert len(dispatched) == 2
