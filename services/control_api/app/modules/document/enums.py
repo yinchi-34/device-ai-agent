@@ -17,6 +17,14 @@ class ExtractionRunStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
+    RETRY_SCHEDULED = "retry_scheduled"
+
+
+TERMINAL_RUN_STATUSES = (
+    ExtractionRunStatus.COMPLETED,
+    ExtractionRunStatus.FAILED,
+    ExtractionRunStatus.CANCELED,
+)
 
 
 class CandidateStatus(StrEnum):

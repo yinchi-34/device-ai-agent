@@ -209,6 +209,80 @@ async def test_transient_errors_retry_without_duplicate_candidate(db_session, tm
     assert count == 1
 
 
+async def _attempt(db_session, tmp_path, run, extraction, embedding, retry_count):
+    return await execute_extraction_run(
+        db_session,
+        run.id,
+        storage=FileSystemDocumentStorage(tmp_path),
+        extraction_provider=extraction,
+        vision_provider=FakeVisionOcrProvider([]),
+        embedding_provider=embedding,
+        retry_count=retry_count,
+        max_retries=3,
+    )
+
+
+async def test_retryable_error_schedules_retry_until_budget_is_spent(
+    db_session, tmp_path
+):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [
+        ProviderError("provider_rate_limited", retryable=True) for _ in range(4)
+    ]
+
+    for retry_count in range(3):
+        with pytest.raises(ProviderError):
+            await _attempt(db_session, tmp_path, run, extraction, embedding, retry_count)
+        await db_session.refresh(run)
+        assert run.status == "retry_scheduled"
+        assert run.error_code == "provider_rate_limited"
+        assert run.error_detail["retry_count"] == retry_count + 1
+        assert run.error_detail["max_retries"] == 3
+        assert run.finished_at is None
+
+    with pytest.raises(ProviderError):
+        await _attempt(db_session, tmp_path, run, extraction, embedding, 3)
+    await db_session.refresh(run)
+    assert run.status == "failed"
+    assert run.error_code == "provider_rate_limited"
+    assert run.error_detail["retry_count"] == 3
+    assert run.error_detail["max_retries"] == 3
+    assert run.finished_at is not None
+
+
+async def test_run_completes_when_a_retry_succeeds(db_session, tmp_path):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [
+        ProviderError("provider_rate_limited", retryable=True) for _ in range(4)
+    ]
+
+    with pytest.raises(ProviderError):
+        await _attempt(db_session, tmp_path, run, extraction, embedding, 0)
+    await db_session.refresh(run)
+    assert run.status == "retry_scheduled"
+    extraction.failures = []
+
+    await _attempt(db_session, tmp_path, run, extraction, embedding, 1)
+    await db_session.refresh(run)
+    assert run.status == "awaiting_review"
+    assert run.error_code is None
+    assert run.error_detail == {}
+
+
+async def test_non_retryable_error_fails_immediately(db_session, tmp_path):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [ProviderError("provider_auth_failed", retryable=False)]
+
+    with pytest.raises(ProviderError):
+        await _attempt(db_session, tmp_path, run, extraction, embedding, 0)
+
+    await db_session.refresh(run)
+    assert run.status == "failed"
+    assert run.error_code == "provider_auth_failed"
+    assert run.error_detail == {"retryable": False}
+    assert run.finished_at is not None
+
+
 async def test_pipeline_reuses_persisted_chunks_on_retry(db_session, tmp_path):
     run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
     db_session.add(

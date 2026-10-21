@@ -1,7 +1,9 @@
 import subprocess
 import sys
 
+from app.modules.document import tasks
 from app.modules.document.celery_app import celery_app
+from app.modules.document.providers import ProviderError
 from app.modules.document.tasks import extract_document
 
 
@@ -16,6 +18,22 @@ def test_celery_uses_durable_json_tasks():
 def test_extract_task_accepts_only_run_identifier():
     assert extract_document.name == "document.extract"
     assert list(extract_document.run.__annotations__) == ["run_id", "return"]
+
+
+def test_celery_retries_pass_attempt_budget_to_the_run(monkeypatch):
+    calls = []
+
+    async def failing_execute(session, run_id, **kwargs):
+        calls.append((kwargs["retry_count"], kwargs["max_retries"]))
+        raise ProviderError("provider_timeout", retryable=True)
+
+    monkeypatch.setattr(tasks, "execute_extraction_run", failing_execute)
+    monkeypatch.setattr(extract_document, "retry_backoff", False)
+
+    result = extract_document.apply(args=(1,))
+
+    assert isinstance(result.result, tasks.TransientProviderError)
+    assert calls == [(0, 3), (1, 3), (2, 3), (3, 3)]
 
 
 def test_worker_default_modules_register_extraction_task():

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.modules.device.models import DeviceModel
+from app.modules.document.enums import TERMINAL_RUN_STATUSES
 from app.modules.document.file_validation import DocumentValidationError
 from app.modules.document.models import (
     ProfileExtractionCandidate,
@@ -71,9 +72,34 @@ class DocumentApplicationService:
             )
         return document
 
-    async def queue_extraction(self, document_id: int) -> ProfileExtractionRun:
-        await self.get_document(document_id)
-        return await create_extraction_run(
+    async def queue_extraction(
+        self, document_id: int
+    ) -> tuple[ProfileExtractionRun, bool]:
+        """Return (run, created); reuse the document's unfinished run if any."""
+        # The row lock serializes concurrent submissions until the caller commits.
+        document = await self.session.scalar(
+            select(SourceDocument)
+            .where(SourceDocument.id == document_id)
+            .with_for_update()
+        )
+        if document is None or document.is_deleted:
+            raise DomainError(
+                "document_not_found", f"Document {document_id} not found", 404
+            )
+        active_run = await self.session.scalar(
+            select(ProfileExtractionRun)
+            .where(
+                ProfileExtractionRun.source_document_id == document_id,
+                ProfileExtractionRun.status.not_in(
+                    [status.value for status in TERMINAL_RUN_STATUSES]
+                ),
+            )
+            .order_by(ProfileExtractionRun.id)
+            .limit(1)
+        )
+        if active_run is not None:
+            return active_run, False
+        run = await create_extraction_run(
             self.session,
             document_id,
             extraction_provider="openai_compatible",
@@ -83,6 +109,7 @@ class DocumentApplicationService:
             embedding_provider="openai_compatible",
             embedding_model=self.settings.document_embedding_model,
         )
+        return run, True
 
     async def get_run(self, run_id: int) -> ProfileExtractionRun:
         run = await self.session.get(ProfileExtractionRun, run_id)
