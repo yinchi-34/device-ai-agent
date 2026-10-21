@@ -1,9 +1,11 @@
+import asyncio
 import json
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.main import create_app
+from app.modules.document import admin_router
 from app.modules.document.models import (
     CandidateReviewEvent,
     DocumentChunk,
@@ -484,3 +486,48 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"
     assert refreshed.review_note == "wrong device model"
+
+
+async def test_admin_extract_button_is_idempotent(db_session, monkeypatch):
+    document = SourceDocument(
+        original_file_name="manual.pdf",
+        media_type="application/pdf",
+        file_size_bytes=10,
+        file_hash_sha256="a" * 64,
+        storage_uri="original/aa/manual.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.commit()
+    dispatched = []
+    monkeypatch.setattr(admin_router, "dispatch_extraction_task", dispatched.append)
+    monkeypatch.setenv("DEVICE_ADMIN_USERNAME", "reviewer")
+    monkeypatch.setenv("DEVICE_ADMIN_PASSWORD", "review-secret")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()), base_url="http://test"
+    ) as client:
+        await client.get("/admin/login")
+        csrf_token = client.cookies.get("admin_csrf")
+        await client.post(
+            "/admin/login",
+            data={
+                "username": "reviewer",
+                "password": "review-secret",
+                "_csrf_token": csrf_token,
+            },
+        )
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    f"/admin/documents/{document.id}/extract",
+                    data={"_csrf_token": csrf_token},
+                )
+                for _ in range(5)
+            )
+        )
+
+    assert {r.status_code for r in responses} == {303}
+    runs = (await db_session.scalars(select(ProfileExtractionRun))).all()
+    assert len(runs) == 1
+    assert dispatched == [runs[0].id]

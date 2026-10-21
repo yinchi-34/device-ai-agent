@@ -2,7 +2,7 @@ import subprocess
 import sys
 
 from app.modules.document.celery_app import celery_app
-from app.modules.document.tasks import extract_document
+from app.modules.document.tasks import TransientProviderError, extract_document
 
 
 def test_celery_uses_durable_json_tasks():
@@ -35,3 +35,8 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_extract_task_retries_at_most_three_times_via_celery():
+    assert extract_document.max_retries == 3
+    assert extract_document.autoretry_for == (TransientProviderError,)
