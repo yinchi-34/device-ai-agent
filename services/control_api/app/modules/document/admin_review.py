@@ -11,6 +11,7 @@ EXTRACTION_RUN_LABELS = {
     ExtractionRunStatus.VALIDATING.value: "校验文档中",
     ExtractionRunStatus.PARSING.value: "解析文档中",
     ExtractionRunStatus.EXTRACTING.value: "AI 提取中",
+    ExtractionRunStatus.RETRY_SCHEDULED.value: "等待自动重试",
     ExtractionRunStatus.VALIDATING_OUTPUT.value: "校验 AI 结果中",
     ExtractionRunStatus.AWAITING_REVIEW.value: "等待人工审核",
     ExtractionRunStatus.IMPORTING.value: "导入中",
@@ -52,6 +53,7 @@ _ACTIVE_RUN_STATUSES = {
     ExtractionRunStatus.VALIDATING.value,
     ExtractionRunStatus.PARSING.value,
     ExtractionRunStatus.EXTRACTING.value,
+    ExtractionRunStatus.RETRY_SCHEDULED.value,
     ExtractionRunStatus.VALIDATING_OUTPUT.value,
     ExtractionRunStatus.IMPORTING.value,
 }

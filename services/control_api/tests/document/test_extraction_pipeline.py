@@ -480,3 +480,76 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+async def run_like_celery(db_session, tmp_path, run, extraction, embedding, attempts):
+    """Mimic the Celery task: re-run on retryable errors, passing retries so far."""
+    statuses = []
+    for retry_count in range(attempts):
+        try:
+            await execute_extraction_run(
+                db_session,
+                run.id,
+                storage=FileSystemDocumentStorage(tmp_path),
+                extraction_provider=extraction,
+                vision_provider=FakeVisionOcrProvider([]),
+                embedding_provider=embedding,
+                retry_count=retry_count,
+            )
+        except ProviderError:
+            statuses.append((run.status, run.error_code, dict(run.error_detail)))
+            if run.status == "failed":
+                break
+        else:
+            statuses.append((run.status, run.error_code, dict(run.error_detail)))
+            break
+    return statuses
+
+
+async def test_retryable_error_schedules_retry_then_succeeds(db_session, tmp_path):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [
+        ProviderError("provider_5xx", retryable=True),
+        ProviderError("provider_rate_limited", retryable=True),
+    ]
+
+    statuses = await run_like_celery(db_session, tmp_path, run, extraction, embedding, 4)
+
+    assert statuses == [
+        (
+            "retry_scheduled",
+            "provider_5xx",
+            {"retryable": True, "retry_count": 1, "max_retries": 3},
+        ),
+        (
+            "retry_scheduled",
+            "provider_rate_limited",
+            {"retryable": True, "retry_count": 2, "max_retries": 3},
+        ),
+        ("awaiting_review", None, {}),
+    ]
+    assert run.finished_at is None
+
+
+async def test_retryable_error_fails_after_three_retries(db_session, tmp_path):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [ProviderError("provider_5xx", retryable=True)] * 4
+
+    statuses = await run_like_celery(db_session, tmp_path, run, extraction, embedding, 5)
+
+    assert [s[0] for s in statuses] == ["retry_scheduled"] * 3 + ["failed"]
+    assert statuses[-1][1] == "provider_5xx"
+    assert statuses[-1][2]["retry_count"] == 3
+    assert statuses[-1][2]["max_retries"] == 3
+    assert extraction.call_count == 4
+    assert run.finished_at is not None
+
+
+async def test_non_retryable_error_fails_immediately(db_session, tmp_path):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    extraction.failures = [ProviderError("provider_auth", retryable=False)]
+
+    statuses = await run_like_celery(db_session, tmp_path, run, extraction, embedding, 4)
+
+    assert statuses == [("failed", "provider_auth", {"retryable": False})]
+    assert extraction.call_count == 1
