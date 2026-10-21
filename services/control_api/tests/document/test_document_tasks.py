@@ -35,3 +35,23 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_task_retries_at_most_three_times():
+    assert extract_document.max_retries == 3
+
+
+async def test_task_passes_retry_state_to_pipeline(monkeypatch):
+    from app.modules.document import tasks
+
+    captured = {}
+
+    async def fake_execute(session, run_id, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(tasks, "execute_extraction_run", fake_execute)
+
+    await tasks._execute(1, 2)
+
+    assert captured["retry_count"] == 2
+    assert captured["max_retries"] == 3
