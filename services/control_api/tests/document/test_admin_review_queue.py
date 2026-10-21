@@ -45,3 +45,7 @@ def test_items_needing_attention_sort_before_completed_items():
     assert review_queue_priority(ReviewQueueStatus.INVALID) < (
         review_queue_priority(ReviewQueueStatus.IMPORTED)
     )
+
+
+def test_retry_scheduled_run_is_processing():
+    assert derive_review_queue_status("validated", "retry_scheduled", None) == "processing"

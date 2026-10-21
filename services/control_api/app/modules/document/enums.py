@@ -11,12 +11,24 @@ class ExtractionRunStatus(StrEnum):
     VALIDATING = "validating"
     PARSING = "parsing"
     EXTRACTING = "extracting"
+    RETRY_SCHEDULED = "retry_scheduled"
     VALIDATING_OUTPUT = "validating_output"
     AWAITING_REVIEW = "awaiting_review"
     IMPORTING = "importing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
+
+
+TERMINAL_EXTRACTION_RUN_STATUSES = frozenset(
+    {
+        ExtractionRunStatus.COMPLETED.value,
+        ExtractionRunStatus.FAILED.value,
+        ExtractionRunStatus.CANCELED.value,
+    }
+)
+
+MAX_EXTRACTION_RETRIES = 3
 
 
 class CandidateStatus(StrEnum):
