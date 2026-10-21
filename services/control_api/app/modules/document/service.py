@@ -1,7 +1,11 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
-from app.modules.document.enums import ExtractionRunStatus
+from app.modules.document.enums import (
+    TERMINAL_EXTRACTION_RUN_STATUSES,
+    ExtractionRunStatus,
+)
 from app.modules.document.models import ProfileExtractionRun, SourceDocument
 from app.modules.document.review_service import (
     DocumentReviewService as DocumentService,
@@ -10,6 +14,7 @@ from app.modules.document.review_service import (
 __all__ = [
     "DocumentService",
     "create_extraction_run",
+    "get_or_create_extraction_run",
     "retry_extraction_run",
 ]
 
@@ -49,6 +54,36 @@ async def create_extraction_run(
     session.add(run)
     await session.flush()
     return run
+
+
+async def get_or_create_extraction_run(
+    session: AsyncSession, source_document_id: int, **run_options
+) -> tuple[ProfileExtractionRun, bool]:
+    """Return the document's unfinished run, or create one; True means created."""
+    # Row lock serializes concurrent submissions for the same document.
+    locked = await session.scalar(
+        select(SourceDocument.id)
+        .where(SourceDocument.id == source_document_id)
+        .with_for_update()
+    )
+    if locked is None:
+        raise DomainError(
+            "not_found", f"SourceDocument {source_document_id} not found", 404
+        )
+    active = await session.scalar(
+        select(ProfileExtractionRun)
+        .where(
+            ProfileExtractionRun.source_document_id == source_document_id,
+            ProfileExtractionRun.status.not_in(TERMINAL_EXTRACTION_RUN_STATUSES),
+        )
+        .order_by(ProfileExtractionRun.id.desc())
+        .limit(1)
+    )
+    if active is not None:
+        return active, False
+    return await create_extraction_run(
+        session, source_document_id, **run_options
+    ), True
 
 
 async def retry_extraction_run(
