@@ -4,6 +4,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.main import create_app
+from app.modules.document import admin_router
 from app.modules.document.models import (
     CandidateReviewEvent,
     DocumentChunk,
@@ -484,3 +485,22 @@ async def test_candidate_can_be_rejected_with_review_note(
     await db_session.refresh(refreshed)
     assert refreshed.status == "rejected"
     assert refreshed.review_note == "wrong device model"
+
+
+async def test_admin_extract_button_is_idempotent(db_session, monkeypatch):
+    dispatched = []
+    monkeypatch.setattr(admin_router, "dispatch_extraction_task", dispatched.append)
+    candidate = await make_candidate(db_session)
+    run = await db_session.get(ProfileExtractionRun, candidate.extraction_run_id)
+    document_id = run.source_document_id
+    run.status = "failed"
+    await db_session.commit()
+
+    async with await _admin_client(monkeypatch) as client:
+        for _ in range(3):
+            response = await client.post(f"/admin/documents/{document_id}/extract")
+            assert response.status_code == 303
+
+    runs = (await db_session.scalars(select(ProfileExtractionRun))).all()
+    assert len(runs) == 2
+    assert len(dispatched) == 1
