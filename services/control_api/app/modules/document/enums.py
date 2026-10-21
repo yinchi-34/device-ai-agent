@@ -15,8 +15,18 @@ class ExtractionRunStatus(StrEnum):
     AWAITING_REVIEW = "awaiting_review"
     IMPORTING = "importing"
     COMPLETED = "completed"
+    RETRY_SCHEDULED = "retry_scheduled"
     FAILED = "failed"
     CANCELED = "canceled"
+
+
+FINISHED_RUN_STATUSES = frozenset(
+    {
+        ExtractionRunStatus.COMPLETED,
+        ExtractionRunStatus.FAILED,
+        ExtractionRunStatus.CANCELED,
+    }
+)
 
 
 class CandidateStatus(StrEnum):
