@@ -35,3 +35,8 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_extract_task_retries_up_to_three_times():
+    assert extract_document.max_retries == 3
+    assert extract_document.autoretry_for

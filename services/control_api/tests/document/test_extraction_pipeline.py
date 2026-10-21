@@ -18,6 +18,7 @@ from app.modules.document.extraction import (
 from app.modules.document.models import (
     DocumentChunk,
     ProfileExtractionCandidate,
+    ProfileExtractionRun,
     SourceDocument,
 )
 from app.modules.document.providers import (
@@ -480,3 +481,95 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+class _AlwaysFailing:
+    def __init__(self, error):
+        self.error = error
+        self.call_count = 0
+
+    async def extract(self, chunks, context):
+        self.call_count += 1
+        raise self.error
+
+
+async def _run_once(db_session, tmp_path, run_id, provider, embedding, **kwargs):
+    with pytest.raises(ProviderError):
+        await execute_extraction_run(
+            db_session,
+            run_id,
+            storage=FileSystemDocumentStorage(tmp_path),
+            extraction_provider=provider,
+            vision_provider=FakeVisionOcrProvider([]),
+            embedding_provider=embedding,
+            **kwargs,
+        )
+    run = await db_session.get(ProfileExtractionRun, run_id)
+    await db_session.refresh(run)
+    return run
+
+
+async def test_retryable_error_sets_retry_scheduled_then_fails_after_three(
+    db_session, tmp_path
+):
+    run, _, embedding = await pipeline_setup(db_session, tmp_path)
+    provider = _AlwaysFailing(ProviderError("provider_rate_limited", retryable=True))
+
+    for retries in range(3):
+        result = await _run_once(
+            db_session, tmp_path, run.id, provider, embedding,
+            retries=retries, max_retries=3,
+        )
+        assert result.status == "retry_scheduled"
+        assert result.error_code == "provider_rate_limited"
+        assert result.finished_at is None
+        assert result.error_detail["retry_count"] == retries + 1
+        assert result.error_detail["max_retries"] == 3
+
+    result = await _run_once(
+        db_session, tmp_path, run.id, provider, embedding, retries=3, max_retries=3
+    )
+    assert result.status == "failed"
+    assert result.error_code == "provider_rate_limited"
+    assert result.error_detail["retry_count"] == 3
+    assert result.error_detail["max_retries"] == 3
+    assert result.finished_at is not None
+
+
+async def test_retry_succeeds_midway(db_session, tmp_path):
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+    failing = _AlwaysFailing(ProviderError("provider_server_error", retryable=True))
+    result = await _run_once(
+        db_session, tmp_path, run.id, failing, embedding, retries=0, max_retries=3
+    )
+    assert result.status == "retry_scheduled"
+
+    await execute_extraction_run(
+        db_session,
+        run.id,
+        storage=FileSystemDocumentStorage(tmp_path),
+        extraction_provider=extraction,
+        vision_provider=FakeVisionOcrProvider([]),
+        embedding_provider=embedding,
+        retries=1,
+        max_retries=3,
+    )
+
+    await db_session.refresh(run)
+    assert run.status == "awaiting_review"
+    assert run.error_code is None
+    assert run.error_detail == {}
+
+
+async def test_non_retryable_error_fails_immediately(db_session, tmp_path):
+    run, _, embedding = await pipeline_setup(db_session, tmp_path)
+    provider = _AlwaysFailing(ProviderError("provider_auth_failed", retryable=False))
+
+    result = await _run_once(
+        db_session, tmp_path, run.id, provider, embedding, retries=0, max_retries=3
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "provider_auth_failed"
+    assert "retry_count" not in result.error_detail
+    assert provider.call_count == 1

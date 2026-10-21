@@ -3,7 +3,7 @@ import asyncio
 from app.core.config import Settings
 from app.db.session import async_session_factory
 from app.modules.document.celery_app import celery_app
-from app.modules.document.extraction import execute_extraction_run
+from app.modules.document.extraction import MAX_AUTO_RETRIES, execute_extraction_run
 from app.modules.document.openai_compatible import (
     OpenAICompatibleEmbeddingProvider,
     OpenAICompatibleExtractionProvider,
@@ -17,7 +17,7 @@ class TransientProviderError(RuntimeError):
     pass
 
 
-async def _execute(run_id: int) -> None:
+async def _execute(run_id: int, retries: int = 0) -> None:
     settings = Settings()
     async with async_session_factory() as session:
         try:
@@ -48,6 +48,8 @@ async def _execute(run_id: int) -> None:
                 extraction_group_max_tokens=(
                     settings.document_extraction_group_max_tokens
                 ),
+                retries=retries,
+                max_retries=MAX_AUTO_RETRIES,
             )
         except ProviderError as exc:
             if exc.retryable:
@@ -60,7 +62,8 @@ async def _execute(run_id: int) -> None:
     autoretry_for=(TransientProviderError,),
     retry_backoff=True,
     retry_jitter=True,
-    max_retries=3,
+    max_retries=MAX_AUTO_RETRIES,
+    bind=True,
 )
-def extract_document(run_id: int) -> None:
-    asyncio.run(_execute(run_id))
+def extract_document(self, run_id: int) -> None:
+    asyncio.run(_execute(run_id, self.request.retries))
