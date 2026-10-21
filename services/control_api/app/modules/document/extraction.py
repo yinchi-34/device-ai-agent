@@ -405,6 +405,7 @@ async def _extract_grouped_candidate(
     )
 
 
+MAX_AUTO_RETRIES = 3
 _EXTRACTION_RUN_LOCK_NAMESPACE = 0x444F4345
 
 
@@ -450,6 +451,7 @@ async def _execute_extraction_run_locked(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    auto_retries_used: int | None = None,
 ) -> ProfileExtractionRun:
     statement = (
         select(ProfileExtractionRun)
@@ -567,10 +569,23 @@ async def _execute_extraction_run_locked(
         await session.commit()
         return run
     except ProviderError as exc:
-        run.status = ExtractionRunStatus.FAILED.value
         run.error_code = exc.code
         run.error_detail = {"retryable": exc.retryable}
-        run.finished_at = datetime.now(UTC)
+        # auto_retries_used is None when the caller (not Celery) owns retrying.
+        if exc.retryable and auto_retries_used is not None:
+            run.error_detail |= {
+                "retry_count": min(auto_retries_used + 1, MAX_AUTO_RETRIES),
+                "max_retries": MAX_AUTO_RETRIES,
+            }
+        if (
+            exc.retryable
+            and auto_retries_used is not None
+            and auto_retries_used < MAX_AUTO_RETRIES
+        ):
+            run.status = ExtractionRunStatus.RETRY_SCHEDULED.value
+        else:
+            run.status = ExtractionRunStatus.FAILED.value
+            run.finished_at = datetime.now(UTC)
         await session.commit()
         raise
     except Exception as exc:
@@ -593,6 +608,7 @@ async def execute_extraction_run(
     renderer: PdfPageRenderer | None = None,
     min_text_chars: int = 40,
     extraction_group_max_tokens: int = 2000,
+    auto_retries_used: int | None = None,
 ) -> ProfileExtractionRun:
     lock_connection = await _try_acquire_run_lock(session, run_id)
     if lock_connection is None:
@@ -611,6 +627,7 @@ async def execute_extraction_run(
             renderer=renderer,
             min_text_chars=min_text_chars,
             extraction_group_max_tokens=extraction_group_max_tokens,
+            auto_retries_used=auto_retries_used,
         )
     finally:
         await _release_run_lock(lock_connection, run_id)
