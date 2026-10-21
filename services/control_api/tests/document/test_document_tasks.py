@@ -1,8 +1,9 @@
 import subprocess
 import sys
 
+from app.modules.document import tasks
 from app.modules.document.celery_app import celery_app
-from app.modules.document.tasks import extract_document
+from app.modules.document.tasks import TransientProviderError, extract_document
 
 
 def test_celery_uses_durable_json_tasks():
@@ -35,3 +36,24 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_extract_task_retries_transient_errors_three_times():
+    assert extract_document.max_retries == 3
+    assert extract_document.autoretry_for == (TransientProviderError,)
+
+
+def test_extract_task_passes_celery_retry_count_to_pipeline(monkeypatch):
+    calls = []
+
+    async def fake_execute(run_id, retry_count=0):
+        calls.append((run_id, retry_count))
+
+    monkeypatch.setattr(tasks, "_execute", fake_execute)
+    extract_document.push_request(retries=2)
+    try:
+        extract_document.run(7)
+    finally:
+        extract_document.pop_request()
+
+    assert calls == [(7, 2)]
