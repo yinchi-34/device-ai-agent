@@ -1,0 +1,991 @@
+{
+  "version": "1.0",
+  "documents": [
+    {
+      "id": "acme-pm5300-en",
+      "title": "ACME PM5300 power meter (English, text-layer PDF)",
+      "format": "pdf",
+      "media_type": "application/pdf",
+      "language": "en",
+      "blocks": [
+        {
+          "content": "ACME PM5300 Series Power Meter\nUser Manual, Revision 2.1\n\n1 Overview\nThe PM5300 measures three-phase voltage, current, power, frequency and energy.\nIt communicates over Ethernet using Modbus TCP on port 502 (unit identifier 1).\nRegister addresses in this manual are zero-based Modbus holding register\naddresses unless stated otherwise. Multi-register values are transmitted with\nthe most significant word first.",
+          "content_type": "text",
+          "page_number": 1,
+          "extraction_method": "pdf_text"
+        },
+        {
+          "content": "2 Communication\n2.1 Supported function codes\nCode   Function\n0x03   Read Holding Registers\n0x04   Read Input Registers\n0x06   Write Single Register\n0x10   Write Multiple Registers\n\n2.2 Example frame\nTo read phase A current, the client sends the request\nRequest: 01 03 0B B8 00 02 46 0A\nResponse: 01 03 04 41 20 00 00 EE 3A\nThe response above decodes to 10.0 A.",
+          "content_type": "text",
+          "page_number": 2,
+          "extraction_method": "pdf_text"
+        },
+        {
+          "content": "3 Register map\n3.1 Measurements (read only)\nAddress  Name                  Format   Access  Unit\n3000     Current A             FLOAT32  R       A\n3002     Current B             FLOAT32  R       A\n3004     Current C             FLOAT32  R       A\n3020     Voltage A-B           FLOAT32  R       V\n3022     Voltage B-C           FLOAT32  R       V\n3060     Active Power Total    FLOAT32  R       kW\n3110     Frequency             FLOAT32  R       Hz",
+          "content_type": "text",
+          "page_number": 3,
+          "extraction_method": "pdf_text"
+        },
+        {
+          "content": "3.1 Measurements (continued)\nAddress  Name                        Format   Access  Unit\n3204     Active Energy Delivered     INT64    R       Wh\n3.2 Configuration\nAddress  Name                        Format   Access  Unit\n4000     Demand Interval             UINT16   RW      min\n4010     Energy Reset Command        UINT16   W\nWriting 1 to register 4010 clears all energy accumulators.",
+          "content_type": "text",
+          "page_number": 4,
+          "extraction_method": "pdf_text"
+        },
+        {
+          "content": "4 Alarms and troubleshooting\nCode  Meaning                       Action\nE01   Overvoltage on any phase      Check the supply and the PT ratio.\nE02   Current transformer reversed  Swap the CT leads S1 and S2.\nE05   Internal memory error         Contact service.\nIf the meter does not answer Modbus requests, confirm that TCP port 502 is open,\nthat the unit identifier is 1, and that no more than 4 clients are connected.",
+          "content_type": "text",
+          "page_number": 5,
+          "extraction_method": "pdf_text"
+        },
+        {
+          "content": "5 Front panel menu\nSetup > Comm > P1.01 IP address\nSetup > Comm > P1.03 Baud rate (RS-485 option only)\nSetup > Comm > P1.04 Parity\nPress OK for 3 seconds to save the settings.",
+          "content_type": "text",
+          "page_number": 6,
+          "extraction_method": "pdf_text"
+        }
+      ],
+      "gold": {
+        "protocols": [
+          "modbus_tcp"
+        ],
+        "points": [
+          {
+            "address": "3000",
+            "name": "Current A",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "A",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "3002",
+            "name": "Current B",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "A",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "3004",
+            "name": "Current C",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "A",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "3020",
+            "name": "Voltage A-B",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "V",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "3022",
+            "name": "Voltage B-C",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "V",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "3060",
+            "name": "Active Power Total",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "kW",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "3110",
+            "name": "Frequency",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "Hz",
+            "evidence_ref": "pdf:page:3:block:3"
+          },
+          {
+            "address": "4000",
+            "name": "Demand Interval",
+            "data_type": "uint16",
+            "access_mode": "RW",
+            "unit": "min",
+            "evidence_ref": "pdf:page:4:block:4"
+          },
+          {
+            "address": "4010",
+            "name": "Energy Reset Command",
+            "data_type": "uint16",
+            "access_mode": "W",
+            "evidence_ref": "pdf:page:4:block:4"
+          }
+        ],
+        "traps": [
+          {
+            "address": "3204",
+            "reason": "unsupported_data_type"
+          },
+          {
+            "address": "0x03",
+            "reason": "function_code_table"
+          },
+          {
+            "address": "0x04",
+            "reason": "function_code_table"
+          },
+          {
+            "address": "0x06",
+            "reason": "function_code_table"
+          },
+          {
+            "address": "0x10",
+            "reason": "function_code_table"
+          },
+          {
+            "address": "0BB8",
+            "reason": "frame_example"
+          },
+          {
+            "address": "P1.01",
+            "reason": "ui_menu"
+          },
+          {
+            "address": "P1.03",
+            "reason": "ui_menu"
+          },
+          {
+            "address": "P1.04",
+            "reason": "ui_menu"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hx-ahu200-zh",
+      "title": "HX-AHU200 空调机组（中文 DOCX，BACnet/IP）",
+      "format": "docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "language": "zh",
+      "blocks": [
+        {
+          "content": "HX-AHU200 组合式空调机组 通讯手册",
+          "content_type": "heading",
+          "extraction_method": "docx_xml"
+        },
+        {
+          "content": "本机组控制器支持 BACnet/IP 通讯，默认 UDP 端口 47808，设备实例号出厂为 2001。BMS 可通过下表中的对象读取运行数据和下发设定。",
+          "content_type": "text",
+          "extraction_method": "docx_xml"
+        },
+        {
+          "content": "1 BACnet 对象列表",
+          "content_type": "heading",
+          "extraction_method": "docx_xml"
+        },
+        {
+          "content": "对象 | 名称 | 数据类型 | 读写 | 单位",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "对象",
+            "名称",
+            "数据类型",
+            "读写",
+            "单位"
+          ],
+          "table_index": 1,
+          "row_index": 1
+        },
+        {
+          "content": "AI:1 | 送风温度 | REAL | R | ℃",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "AI:1",
+            "送风温度",
+            "REAL",
+            "R",
+            "℃"
+          ],
+          "table_index": 1,
+          "row_index": 2
+        },
+        {
+          "content": "AI:2 | 回风温度 | REAL | R | ℃",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "AI:2",
+            "回风温度",
+            "REAL",
+            "R",
+            "℃"
+          ],
+          "table_index": 1,
+          "row_index": 3
+        },
+        {
+          "content": "AI:3 | 送风静压 | REAL | R | Pa",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "AI:3",
+            "送风静压",
+            "REAL",
+            "R",
+            "Pa"
+          ],
+          "table_index": 1,
+          "row_index": 4
+        },
+        {
+          "content": "BI:1 | 风机运行状态 | BOOLEAN | R | ",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "BI:1",
+            "风机运行状态",
+            "BOOLEAN",
+            "R",
+            ""
+          ],
+          "table_index": 1,
+          "row_index": 5
+        },
+        {
+          "content": "BI:2 | 过滤网压差报警 | BOOLEAN | R | ",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "BI:2",
+            "过滤网压差报警",
+            "BOOLEAN",
+            "R",
+            ""
+          ],
+          "table_index": 1,
+          "row_index": 6
+        },
+        {
+          "content": "AV:10 | 送风温度设定值 | REAL | RW | ℃",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "AV:10",
+            "送风温度设定值",
+            "REAL",
+            "RW",
+            "℃"
+          ],
+          "table_index": 1,
+          "row_index": 7
+        },
+        {
+          "content": "BO:1 | 风机启停 | BOOLEAN | RW | ",
+          "content_type": "table_row",
+          "extraction_method": "docx_xml",
+          "cells": [
+            "BO:1",
+            "风机启停",
+            "BOOLEAN",
+            "RW",
+            ""
+          ],
+          "table_index": 1,
+          "row_index": 8
+        },
+        {
+          "content": "2 本地触摸屏参数",
+          "content_type": "heading",
+          "extraction_method": "docx_xml"
+        },
+        {
+          "content": "触摸屏“参数设置”页面中的 M2.1 风机延时、M2.2 防冻温度只能在本地修改，不通过 BACnet 开放。",
+          "content_type": "text",
+          "extraction_method": "docx_xml"
+        },
+        {
+          "content": "3 常见故障",
+          "content_type": "heading",
+          "extraction_method": "docx_xml"
+        },
+        {
+          "content": "过滤网压差报警（BI:2 为 1）表示过滤网堵塞，请清洗或更换过滤网后复位。送风温度长期偏离设定值时，先检查水阀开度和冷热源供水温度。BMS 读不到数据时，确认设备实例号和 UDP 47808 端口在防火墙中放行。",
+          "content_type": "text",
+          "extraction_method": "docx_xml"
+        }
+      ],
+      "gold": {
+        "protocols": [
+          "bacnet_ip"
+        ],
+        "points": [
+          {
+            "address": "AI:1",
+            "aliases": [
+              "analog-input:1",
+              "AI1"
+            ],
+            "name": "送风温度",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "℃",
+            "evidence_ref": "docx:table:1:row:2"
+          },
+          {
+            "address": "AI:2",
+            "aliases": [
+              "analog-input:2",
+              "AI2"
+            ],
+            "name": "回风温度",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "℃",
+            "evidence_ref": "docx:table:1:row:3"
+          },
+          {
+            "address": "AI:3",
+            "aliases": [
+              "analog-input:3",
+              "AI3"
+            ],
+            "name": "送风静压",
+            "data_type": "float32",
+            "access_mode": "R",
+            "unit": "Pa",
+            "evidence_ref": "docx:table:1:row:4"
+          },
+          {
+            "address": "BI:1",
+            "aliases": [
+              "binary-input:1",
+              "BI1"
+            ],
+            "name": "风机运行状态",
+            "data_type": "bool",
+            "access_mode": "R",
+            "evidence_ref": "docx:table:1:row:5"
+          },
+          {
+            "address": "BI:2",
+            "aliases": [
+              "binary-input:2",
+              "BI2"
+            ],
+            "name": "过滤网压差报警",
+            "data_type": "bool",
+            "access_mode": "R",
+            "evidence_ref": "docx:table:1:row:6"
+          },
+          {
+            "address": "AV:10",
+            "aliases": [
+              "analog-value:10",
+              "AV10"
+            ],
+            "name": "送风温度设定值",
+            "data_type": "float32",
+            "access_mode": "RW",
+            "unit": "℃",
+            "evidence_ref": "docx:table:1:row:7"
+          },
+          {
+            "address": "BO:1",
+            "aliases": [
+              "binary-output:1",
+              "BO1"
+            ],
+            "name": "风机启停",
+            "data_type": "bool",
+            "access_mode": "RW",
+            "evidence_ref": "docx:table:1:row:8"
+          }
+        ],
+        "traps": [
+          {
+            "address": "M2.1",
+            "reason": "ui_menu"
+          },
+          {
+            "address": "M2.2",
+            "reason": "ui_menu"
+          },
+          {
+            "address": "47808",
+            "reason": "port_number"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lb300-boiler-zh",
+      "title": "LB-300 锅炉控制器（中文 PDF，含扫描页，Modbus RTU）",
+      "format": "pdf",
+      "media_type": "application/pdf",
+      "language": "zh",
+      "blocks": [
+        {
+          "content": "LB-300 燃气锅炉控制器 使用说明书 V1.3\n第 5 章 通讯\n控制器通过 RS-485 接口支持 Modbus RTU 协议，默认从站地址 1，波特率 9600，8 位数据位，无校验，1 位停止位。\n寄存器表见下页（扫描件）。所有 16 位数值高字节在前。",
+          "content_type": "text",
+          "page_number": 1,
+          "extraction_method": "pdf_text"
+        },
+        {
+          "content": "寄存器地址 | 名称 | 数据类型 | 读写 | 单位/倍率",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "寄存器地址",
+            "名称",
+            "数据类型",
+            "读写",
+            "单位/倍率"
+          ],
+          "confidence": 0.97
+        },
+        {
+          "content": "40001 | 出水温度 | INT16 | 只读 | 0.1 ℃",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "40001",
+            "出水温度",
+            "INT16",
+            "只读",
+            "0.1 ℃"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "content": "40002 | 回水温度 | INT16 | 只读 | 0.1 ℃",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "40002",
+            "回水温度",
+            "INT16",
+            "只读",
+            "0.1 ℃"
+          ],
+          "confidence": 0.94
+        },
+        {
+          "content": "40003 | 炉膛压力 | UINT16 | 只读 | Pa",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "40003",
+            "炉膛压力",
+            "UINT16",
+            "只读",
+            "Pa"
+          ],
+          "confidence": 0.91
+        },
+        {
+          "content": "40010 | 运行状态 | UINT16 | 只读 | 0=待机 1=运行 2=故障",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "40010",
+            "运行状态",
+            "UINT16",
+            "只读",
+            "0=待机 1=运行 2=故障"
+          ],
+          "confidence": 0.93
+        },
+        {
+          "content": "40011 | 当前故障代码 | UINT16 | 只读 | ",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "40011",
+            "当前故障代码",
+            "UINT16",
+            "只读",
+            ""
+          ],
+          "confidence": 0.92
+        },
+        {
+          "content": "40100 | 出水温度设定 | INT16 | 读写 | 0.1 ℃",
+          "content_type": "table",
+          "page_number": 2,
+          "extraction_method": "vision_ocr",
+          "cells": [
+            "40100",
+            "出水温度设定",
+            "INT16",
+            "读写",
+            "0.1 ℃"
+          ],
+          "confidence": 0.88
+        },
+        {
+          "content": "5.3 故障代码\nE1 点火失败：检查燃气阀和点火电极。\nE2 熄火保护：检查火焰检测器。\nE4 超温保护：出水温度超过 95 ℃，检查循环泵。\nE8 通讯故障：检查 RS-485 A/B 接线是否反接，终端电阻是否接入，从站地址和波特率是否与上位机一致。\n5.4 面板参数\nP01 出水温度上限、P02 回差温度只能在面板上设置。",
+          "content_type": "text",
+          "page_number": 3,
+          "extraction_method": "pdf_text"
+        }
+      ],
+      "gold": {
+        "protocols": [
+          "modbus_rtu"
+        ],
+        "points": [
+          {
+            "address": "40001",
+            "name": "出水温度",
+            "data_type": "int16",
+            "access_mode": "R",
+            "unit": "℃",
+            "evidence_ref": "pdf:page:2:block:3"
+          },
+          {
+            "address": "40002",
+            "name": "回水温度",
+            "data_type": "int16",
+            "access_mode": "R",
+            "unit": "℃",
+            "evidence_ref": "pdf:page:2:block:4"
+          },
+          {
+            "address": "40003",
+            "name": "炉膛压力",
+            "data_type": "uint16",
+            "access_mode": "R",
+            "unit": "Pa",
+            "evidence_ref": "pdf:page:2:block:5"
+          },
+          {
+            "address": "40010",
+            "name": "运行状态",
+            "data_type": "uint16",
+            "access_mode": "R",
+            "evidence_ref": "pdf:page:2:block:6"
+          },
+          {
+            "address": "40011",
+            "name": "当前故障代码",
+            "data_type": "uint16",
+            "access_mode": "R",
+            "evidence_ref": "pdf:page:2:block:7"
+          },
+          {
+            "address": "40100",
+            "name": "出水温度设定",
+            "data_type": "int16",
+            "access_mode": "RW",
+            "unit": "℃",
+            "evidence_ref": "pdf:page:2:block:8"
+          }
+        ],
+        "traps": [
+          {
+            "address": "P01",
+            "reason": "ui_menu"
+          },
+          {
+            "address": "P02",
+            "reason": "ui_menu"
+          }
+        ]
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "pm-current-a-register",
+      "document_id": "acme-pm5300-en",
+      "query": "Which register holds the phase A current?",
+      "relevant_refs": [
+        "pdf:page:3:block:3"
+      ],
+      "tags": [
+        "en",
+        "points"
+      ]
+    },
+    {
+      "id": "pm-3110",
+      "document_id": "acme-pm5300-en",
+      "query": "3110",
+      "relevant_refs": [
+        "pdf:page:3:block:3"
+      ],
+      "tags": [
+        "en",
+        "exact_term",
+        "points"
+      ]
+    },
+    {
+      "id": "pm-frequency-format",
+      "document_id": "acme-pm5300-en",
+      "query": "What data format is the frequency value?",
+      "relevant_refs": [
+        "pdf:page:3:block:3"
+      ],
+      "tags": [
+        "en",
+        "points"
+      ]
+    },
+    {
+      "id": "pm-demand-interval",
+      "document_id": "acme-pm5300-en",
+      "query": "How do I configure the demand interval over Modbus?",
+      "relevant_refs": [
+        "pdf:page:4:block:4"
+      ],
+      "tags": [
+        "en",
+        "points"
+      ]
+    },
+    {
+      "id": "pm-reset-energy",
+      "document_id": "acme-pm5300-en",
+      "query": "How can the energy counters be cleared remotely?",
+      "relevant_refs": [
+        "pdf:page:4:block:4"
+      ],
+      "tags": [
+        "en",
+        "semantic"
+      ]
+    },
+    {
+      "id": "pm-int64",
+      "document_id": "acme-pm5300-en",
+      "query": "Is active energy delivered available, and in which format?",
+      "relevant_refs": [
+        "pdf:page:4:block:4"
+      ],
+      "tags": [
+        "en",
+        "points"
+      ]
+    },
+    {
+      "id": "pm-function-codes",
+      "document_id": "acme-pm5300-en",
+      "query": "Which Modbus function codes does the meter support?",
+      "relevant_refs": [
+        "pdf:page:2:block:2"
+      ],
+      "tags": [
+        "en",
+        "protocol"
+      ]
+    },
+    {
+      "id": "pm-port",
+      "document_id": "acme-pm5300-en",
+      "query": "What TCP port and unit identifier does the meter use?",
+      "relevant_refs": [
+        "pdf:page:1:block:1",
+        "pdf:page:5:block:5"
+      ],
+      "tags": [
+        "en",
+        "protocol"
+      ]
+    },
+    {
+      "id": "pm-word-order",
+      "document_id": "acme-pm5300-en",
+      "query": "Are 32-bit values sent high word first?",
+      "relevant_refs": [
+        "pdf:page:1:block:1"
+      ],
+      "tags": [
+        "en",
+        "protocol"
+      ]
+    },
+    {
+      "id": "pm-e02",
+      "document_id": "acme-pm5300-en",
+      "query": "E02",
+      "relevant_refs": [
+        "pdf:page:5:block:5"
+      ],
+      "tags": [
+        "en",
+        "exact_term",
+        "fault"
+      ]
+    },
+    {
+      "id": "pm-no-answer",
+      "document_id": "acme-pm5300-en",
+      "query": "The meter does not respond to Modbus requests, what should I check?",
+      "relevant_refs": [
+        "pdf:page:5:block:5"
+      ],
+      "tags": [
+        "en",
+        "fault"
+      ]
+    },
+    {
+      "id": "pm-overvoltage",
+      "document_id": "acme-pm5300-en",
+      "query": "What does an overvoltage alarm mean and what is the fix?",
+      "relevant_refs": [
+        "pdf:page:5:block:5"
+      ],
+      "tags": [
+        "en",
+        "fault"
+      ]
+    },
+    {
+      "id": "pm-baud-menu",
+      "document_id": "acme-pm5300-en",
+      "query": "Where do I set the baud rate on the front panel?",
+      "relevant_refs": [
+        "pdf:page:6:block:6"
+      ],
+      "tags": [
+        "en",
+        "other"
+      ]
+    },
+    {
+      "id": "pm-zh-current",
+      "document_id": "acme-pm5300-en",
+      "query": "A 相电流在哪个寄存器？",
+      "relevant_refs": [
+        "pdf:page:3:block:3"
+      ],
+      "tags": [
+        "cross_lingual",
+        "points"
+      ]
+    },
+    {
+      "id": "pm-zh-troubleshoot",
+      "document_id": "acme-pm5300-en",
+      "query": "电表 Modbus 通讯不上怎么排查？",
+      "relevant_refs": [
+        "pdf:page:5:block:5"
+      ],
+      "tags": [
+        "cross_lingual",
+        "fault"
+      ]
+    },
+    {
+      "id": "ahu-supply-temp",
+      "document_id": "hx-ahu200-zh",
+      "query": "送风温度对应哪个 BACnet 对象？",
+      "relevant_refs": [
+        "docx:table:1:row:2"
+      ],
+      "tags": [
+        "zh",
+        "points"
+      ]
+    },
+    {
+      "id": "ahu-av10",
+      "document_id": "hx-ahu200-zh",
+      "query": "AV:10",
+      "relevant_refs": [
+        "docx:table:1:row:7"
+      ],
+      "tags": [
+        "zh",
+        "exact_term",
+        "points"
+      ]
+    },
+    {
+      "id": "ahu-fan-start",
+      "document_id": "hx-ahu200-zh",
+      "query": "如何远程启停风机？",
+      "relevant_refs": [
+        "docx:table:1:row:8"
+      ],
+      "tags": [
+        "zh",
+        "points"
+      ]
+    },
+    {
+      "id": "ahu-filter-alarm",
+      "document_id": "hx-ahu200-zh",
+      "query": "过滤网报警是哪个点，报警后怎么处理？",
+      "relevant_refs": [
+        "docx:table:1:row:6",
+        "docx:block:15"
+      ],
+      "tags": [
+        "zh",
+        "fault"
+      ]
+    },
+    {
+      "id": "ahu-port",
+      "document_id": "hx-ahu200-zh",
+      "query": "BACnet 端口和设备实例号是多少？",
+      "relevant_refs": [
+        "docx:block:2"
+      ],
+      "tags": [
+        "zh",
+        "protocol"
+      ]
+    },
+    {
+      "id": "ahu-no-data",
+      "document_id": "hx-ahu200-zh",
+      "query": "BMS 读不到机组数据",
+      "relevant_refs": [
+        "docx:block:15"
+      ],
+      "tags": [
+        "zh",
+        "fault"
+      ]
+    },
+    {
+      "id": "ahu-local-params",
+      "document_id": "hx-ahu200-zh",
+      "query": "风机延时能通过 BACnet 修改吗？",
+      "relevant_refs": [
+        "docx:block:13"
+      ],
+      "tags": [
+        "zh",
+        "other"
+      ]
+    },
+    {
+      "id": "ahu-en-static-pressure",
+      "document_id": "hx-ahu200-zh",
+      "query": "Which object reports supply duct static pressure?",
+      "relevant_refs": [
+        "docx:table:1:row:4"
+      ],
+      "tags": [
+        "cross_lingual",
+        "points"
+      ]
+    },
+    {
+      "id": "boiler-outlet-temp",
+      "document_id": "lb300-boiler-zh",
+      "query": "出水温度的寄存器地址和倍率",
+      "relevant_refs": [
+        "pdf:page:2:block:3"
+      ],
+      "tags": [
+        "zh",
+        "points",
+        "scanned"
+      ]
+    },
+    {
+      "id": "boiler-40010",
+      "document_id": "lb300-boiler-zh",
+      "query": "40010",
+      "relevant_refs": [
+        "pdf:page:2:block:6"
+      ],
+      "tags": [
+        "zh",
+        "exact_term",
+        "points",
+        "scanned"
+      ]
+    },
+    {
+      "id": "boiler-setpoint",
+      "document_id": "lb300-boiler-zh",
+      "query": "怎样通过通讯修改出水温度设定值？",
+      "relevant_refs": [
+        "pdf:page:2:block:8"
+      ],
+      "tags": [
+        "zh",
+        "points",
+        "scanned"
+      ]
+    },
+    {
+      "id": "boiler-e8",
+      "document_id": "lb300-boiler-zh",
+      "query": "E8",
+      "relevant_refs": [
+        "pdf:page:3:block:9"
+      ],
+      "tags": [
+        "zh",
+        "exact_term",
+        "fault"
+      ]
+    },
+    {
+      "id": "boiler-rs485",
+      "document_id": "lb300-boiler-zh",
+      "query": "RS-485 通讯失败怎么排查？",
+      "relevant_refs": [
+        "pdf:page:3:block:9"
+      ],
+      "tags": [
+        "zh",
+        "fault"
+      ]
+    },
+    {
+      "id": "boiler-serial-settings",
+      "document_id": "lb300-boiler-zh",
+      "query": "默认波特率和从站地址是多少？",
+      "relevant_refs": [
+        "pdf:page:1:block:1"
+      ],
+      "tags": [
+        "zh",
+        "protocol"
+      ]
+    },
+    {
+      "id": "boiler-overtemp",
+      "document_id": "lb300-boiler-zh",
+      "query": "锅炉超温保护是什么原因？",
+      "relevant_refs": [
+        "pdf:page:3:block:9"
+      ],
+      "tags": [
+        "zh",
+        "fault"
+      ]
+    },
+    {
+      "id": "boiler-en-fault-register",
+      "document_id": "lb300-boiler-zh",
+      "query": "Which register holds the current fault code?",
+      "relevant_refs": [
+        "pdf:page:2:block:7"
+      ],
+      "tags": [
+        "cross_lingual",
+        "points",
+        "scanned"
+      ]
+    }
+  ]
+}

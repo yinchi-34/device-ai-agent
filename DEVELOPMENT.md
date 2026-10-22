@@ -320,18 +320,25 @@ persisted evidence step.
 
 ### Evaluation
 
-Versioned evaluation cases live in
-[`services/control_api/evals/diagnosis/cases.json`](services/control_api/evals/diagnosis/cases.json).
-Run repeated live-model evaluation from `services/control_api`:
+Three offline suites cover the model-dependent parts: the diagnosis agent end
+to end, profile candidate extraction, and `search_manual` retrieval. They run
+on versioned datasets in
+[`services/control_api/evals/`](services/control_api/evals/README.md), write a
+JSON report per run and exit non-zero when a metric misses its gate. From
+`services/control_api`:
 
 ```bash
 python scripts/run_diagnosis_evals.py --trials 3
+python scripts/run_document_evals.py
 ```
 
-The report includes classification accuracy, handoff/escalation rate,
-dangerous-action rate, total tokens, average latency, and average step count.
-The dataset pins the system prompt SHA-256, so prompt changes require an
-explicit baseline review.
+Diagnosis reports pass rate, pass^k, classification accuracy, dangerous-action
+and policy-violation rates, evidence grounding, redundant calls, tokens and p95
+latency, split by tag. Extraction reports point precision/recall/F1, field and
+evidence accuracy and trap hits. Retrieval reports Hit@1, Recall@5 and MRR by
+language and query type. The diagnosis dataset pins the system prompt SHA-256,
+so prompt changes require an explicit baseline review. The `Evals` workflow
+runs the suites on demand; see the [evals README](services/control_api/evals/README.md).
 
 ## Testing
 
@@ -406,8 +413,8 @@ service anywhere else:
     │       ├── document/       # ingestion, extraction, review console, RAG
     │       └── diagnosis/      # read-only agent, tools, gateway, evals
     ├── alembic/                # database migrations
-    ├── evals/diagnosis/        # versioned diagnosis eval cases
-    ├── scripts/                # run_diagnosis_evals.py
+    ├── evals/                  # versioned eval datasets and gates
+    ├── scripts/                # run_diagnosis_evals.py, run_document_evals.py
     ├── tests/
     ├── Dockerfile
     └── pyproject.toml

@@ -1,0 +1,11 @@
+{
+  "point_recall": {"min": 0.9},
+  "point_precision": {"min": 0.9},
+  "data_type_accuracy": {"min": 0.95},
+  "access_mode_accuracy": {"min": 0.95},
+  "evidence_accuracy": {"min": 0.9},
+  "trap_hit_rate": {"max": 0.1},
+  "unknown_evidence_ref_count": {"max": 0},
+  "protocol_accuracy": {"min": 1.0},
+  "provider_error_rate": {"max": 0.0}
+}
