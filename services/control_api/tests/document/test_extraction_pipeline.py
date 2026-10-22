@@ -3,6 +3,7 @@ from hashlib import sha256
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from pypdf import PdfWriter
 from sqlalchemy import func, select
 
 from app.db.session import async_session_factory
@@ -20,6 +21,7 @@ from app.modules.document.models import (
     ProfileExtractionCandidate,
     SourceDocument,
 )
+from app.modules.document.parsers import FileSystemPageCache, PdfParseOptions
 from app.modules.document.providers import (
     EmbeddingResult,
     ExtractionResult,
@@ -27,6 +29,7 @@ from app.modules.document.providers import (
     FakeExtractionProvider,
     FakeVisionOcrProvider,
     ProviderError,
+    VisionBlock,
 )
 from app.modules.document.service import create_extraction_run
 from app.modules.document.storage import FileSystemDocumentStorage
@@ -480,3 +483,80 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+async def test_retried_scanned_run_reuses_ocr_pages_that_succeeded(
+    db_session, tmp_path
+):
+    path = tmp_path / "original" / "scan.pdf"
+    path.parent.mkdir(parents=True)
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.add_blank_page(width=100, height=100)
+    with path.open("wb") as stream:
+        writer.write(stream)
+    content = path.read_bytes()
+    document = SourceDocument(
+        original_file_name="scan.pdf",
+        media_type="application/pdf",
+        file_size_bytes=len(content),
+        file_hash_sha256=sha256(content).hexdigest(),
+        storage_uri="original/scan.pdf",
+        validation_status="validated",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    run = await create_extraction_run(
+        db_session,
+        document.id,
+        extraction_provider="fake",
+        extraction_model="extract-v1",
+        embedding_provider="fake",
+        embedding_model="embed-v1",
+    )
+
+    class Renderer:
+        def render_png(self, pdf_path, page_number):
+            return b"png"
+
+    class Vision:
+        cache_identity = "vision-v1"
+
+        def __init__(self, failing_page=None):
+            self.failing_page = failing_page
+            self.pages = []
+
+        async def extract_page(self, image_bytes, page_number):
+            self.pages.append(page_number)
+            if page_number == self.failing_page:
+                raise ProviderError("provider_request_rejected")
+            return [VisionBlock(content=f"Run status 4000{page_number}")]
+
+    dependencies = {
+        "storage": FileSystemDocumentStorage(tmp_path),
+        "extraction_provider": FakeExtractionProvider(
+            ExtractionResult(candidate_payload(), {"id": "response"}, {})
+        ),
+        "embedding_provider": FakeEmbeddingProvider(
+            EmbeddingResult([[1.0, 0.0, 0.0]] * 2, "fake", "embed-v1", 3, {})
+        ),
+        "renderer": Renderer(),
+        "pdf_options": PdfParseOptions(ocr_concurrency=1),
+        "page_cache": FileSystemPageCache(tmp_path / "page-cache"),
+    }
+    first = Vision(failing_page=2)
+    with pytest.raises(ProviderError):
+        await execute_extraction_run(
+            db_session, run.id, vision_provider=first, **dependencies
+        )
+    second = Vision()
+    await execute_extraction_run(
+        db_session, run.id, vision_provider=second, **dependencies
+    )
+
+    await db_session.refresh(run)
+    assert first.pages == [1, 2]
+    assert second.pages == [2]
+    assert run.status == "awaiting_review"
+    assert run.parse_metadata["ocr_pages"] == [1, 2]
+    assert [page["cached"] for page in run.parse_metadata["pages"]] == [True, False]

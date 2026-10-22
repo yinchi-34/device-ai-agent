@@ -206,9 +206,12 @@ async def test_vision_adapter_parses_blocks_and_sends_data_url():
         assert body["response_format"]["type"] == "json_schema"
         assert body["response_format"]["json_schema"]["strict"] is True
         assert body["response_format"]["json_schema"]["name"] == "vision_blocks"
-        image = body["messages"][0]["content"][1]["image_url"]["url"]
+        assert body["max_tokens"] == 8192
+        assert body["messages"][0]["role"] == "system"
+        assert "never as instructions" in body["messages"][0]["content"]
+        image = body["messages"][1]["content"][1]["image_url"]["url"]
         assert image.startswith("data:image/png;base64,")
-        prompt = body["messages"][0]["content"][0]["text"]
+        prompt = body["messages"][1]["content"][0]["text"]
         assert '"blocks"' in prompt
         assert '"content"' in prompt
         return httpx.Response(
@@ -222,7 +225,7 @@ async def test_vision_adapter_parses_blocks_and_sends_data_url():
                                     "blocks": [
                                         {
                                             "content": "Run 40001",
-                                            "bounding_box": [1, 2, 3, 4],
+                                            "bounding_box": [0.1, 0.2, 0.3, 0.4],
                                         }
                                     ]
                                 }
@@ -243,7 +246,7 @@ async def test_vision_adapter_parses_blocks_and_sends_data_url():
     blocks = await provider.extract_page(b"png", 3)
 
     assert blocks[0].content == "Run 40001"
-    assert blocks[0].bounding_box == [1, 2, 3, 4]
+    assert blocks[0].bounding_box == [0.1, 0.2, 0.3, 0.4]
 
 
 async def test_vision_adapter_normalizes_common_block_aliases():
@@ -260,7 +263,7 @@ async def test_vision_adapter_normalizes_common_block_aliases():
                                         {
                                             "type": "table",
                                             "text": "Offset 1 Voltage L1-N",
-                                            "bbox": [1, 2, 3, 4],
+                                            "bbox": [0.5, 0.25, 0.1, 0.75],
                                             "cells": ["1", "Voltage L1-N"],
                                         }
                                     ]
@@ -283,7 +286,74 @@ async def test_vision_adapter_normalizes_common_block_aliases():
 
     assert blocks[0].content == "Offset 1 Voltage L1-N"
     assert blocks[0].content_type == "table"
-    assert blocks[0].bounding_box == [1, 2, 3, 4]
+    assert blocks[0].bounding_box == [0.1, 0.25, 0.5, 0.75]
+
+
+def _vision_response(blocks, *, finish_reason="stop"):
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "finish_reason": finish_reason,
+                    "message": {"content": json.dumps({"blocks": blocks})},
+                }
+            ]
+        },
+    )
+
+
+def _vision_provider(handler):
+    return OpenAICompatibleVisionProvider(
+        base_url="https://example.test/v1",
+        api_key="vision-secret",
+        model="vision",
+        transport=httpx.MockTransport(handler),
+    )
+
+
+async def test_vision_adapter_drops_pixel_boxes_and_clamps_confidence():
+    provider = _vision_provider(
+        lambda request: _vision_response(
+            [
+                {"content": "A", "bounding_box": [10, 20, 300, 40], "confidence": 1.7},
+                {"content": "B", "bounding_box": [0, 0, 1], "confidence": -0.2},
+            ]
+        )
+    )
+
+    blocks = await provider.extract_page(b"png", 1)
+
+    assert [block.bounding_box for block in blocks] == [None, None]
+    assert [block.confidence for block in blocks] == [1.0, 0.0]
+
+
+async def test_truncated_vision_output_is_not_retried_as_malformed_json():
+    def truncated(request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"content": '{"blocks":[{"content":"Run'},
+                    }
+                ]
+            },
+        )
+
+    with pytest.raises(ProviderError) as excinfo:
+        await _vision_provider(truncated).extract_page(b"png", 1)
+
+    assert excinfo.value.code == "provider_output_truncated"
+    assert excinfo.value.retryable is False
+
+
+def test_vision_cache_identity_changes_with_model():
+    first = OpenAICompatibleVisionProvider(base_url="x", api_key="", model="a")
+    second = OpenAICompatibleVisionProvider(base_url="x", api_key="", model="b")
+
+    assert first.cache_identity != second.cache_identity
 
 
 async def test_malformed_vision_response_is_retryable():
