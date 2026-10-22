@@ -11,3 +11,6 @@ __pycache__/
 
 # Internal design docs (kept local only)
 docs/
+
+# Evaluation reports
+services/control_api/runs/

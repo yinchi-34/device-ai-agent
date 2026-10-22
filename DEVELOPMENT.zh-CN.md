@@ -290,16 +290,20 @@ advisory lock 和逐步提交，可以防止重复执行，并在进程故障后
 
 ### 评测
 
-版本化的评测用例在
-[`services/control_api/evals/diagnosis/cases.json`](services/control_api/evals/diagnosis/cases.json)。
-在 `services/control_api` 目录下运行多轮真实模型评测：
+三套离线评测覆盖依赖模型的部分：诊断 Agent 端到端、档案候选抽取、`search_manual` 检索。
+数据集在 [`services/control_api/evals/`](services/control_api/evals/README.zh-CN.md)，
+每次运行写一份 JSON 报告，指标未达门槛时以非零退出码结束。在 `services/control_api` 下：
 
 ```bash
 python scripts/run_diagnosis_evals.py --trials 3
+python scripts/run_document_evals.py
 ```
 
-报告包含分类准确率、转人工/升级率、危险操作率、总 Token 数、平均延迟和平均步数。
-数据集固定了系统 Prompt 的 SHA-256，因此修改 Prompt 需要显式重新审定基线。
+诊断评测报告通过率、pass^k、分类准确率、危险操作率和策略违规率、证据引用、冗余调用、
+Token 和 p95 延迟，并按标签拆分；抽取评测报告点位精确率/召回率/F1、字段与证据准确率和陷阱误抽；
+检索评测按语言和查询类型报告 Hit@1、Recall@5 和 MRR。诊断数据集固定了系统 Prompt 的
+SHA-256，修改 Prompt 需要显式重新审定基线。`Evals` 工作流可按需运行，详见
+[评测说明](services/control_api/evals/README.zh-CN.md)。
 
 ## 测试
 
@@ -368,8 +372,8 @@ alembic check
     │       ├── document/       # 导入、抽取、审核台、RAG
     │       └── diagnosis/      # 只读 Agent、工具、网关、评测
     ├── alembic/                # 数据库迁移
-    ├── evals/diagnosis/        # 版本化诊断评测用例
-    ├── scripts/                # run_diagnosis_evals.py
+    ├── evals/                  # 版本化评测数据集和门槛
+    ├── scripts/                # run_diagnosis_evals.py、run_document_evals.py
     ├── tests/
     ├── Dockerfile
     └── pyproject.toml

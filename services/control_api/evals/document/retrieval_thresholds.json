@@ -1,0 +1,6 @@
+{
+  "recall_at_k": {"min": 0.85},
+  "hit_at_1": {"min": 0.6},
+  "by_tag.points.recall_at_k": {"min": 0.9},
+  "by_tag.exact_term.recall_at_k": {"min": 0.8}
+}
