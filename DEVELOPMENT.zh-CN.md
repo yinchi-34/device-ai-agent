@@ -301,6 +301,36 @@ python scripts/run_diagnosis_evals.py --trials 3
 报告包含分类准确率、转人工/升级率、危险操作率、总 Token 数、平均延迟和平均步数。
 数据集固定了系统 Prompt 的 SHA-256，因此修改 Prompt 需要显式重新审定基线。
 
+#### 检索评测
+
+说明书检索（诊断 Agent `search_manual` 工具背后的 RAG 链路）有独立的数据集，位于
+[`services/control_api/evals/retrieval/`](services/control_api/evals/retrieval/)：
+包含三份样本说明书（空调机组 PDF；带参数表和故障代码表的变频器 DOCX；以及另一个
+设备型号的冷水机组 PDF，故意复用了空调机组的报警代码），以及按类别分组的标注用例
+（`exact_code`、`table_lookup`、`troubleshooting`、`spec`、`procedure`、
+`scope_conflict`）。
+
+评测走的是生产链路：真实的解析器和 `build_chunks`、`embed_run_chunks`，再用限定
+设备型号的 `search_document_chunks` 检索。是否命中按内容判断：检索到的块只要包含
+某条证据的全部关键词（忽略空白）就算相关，因此修改切块方式后标注依然有效。全部操作
+在一个事务里完成，结束时总是回滚。
+
+```bash
+# 确定性、无需联网的基线（哈希 n-gram Embedding）
+python scripts/run_retrieval_evals.py
+
+# 使用 DEVICE_DOCUMENT_EMBEDDING_* 中配置的 Embedding 模型
+python scripts/run_retrieval_evals.py --embedding configured --json report.json
+```
+
+报告给出 hit@1/3/k、MRR、证据召回率@k、前 k 条结果的平均字符数（即 Agent 要消耗的
+上下文）、重复率和越界结果数，分整体和按类别统计。第二个场景 `after_retry` 会把
+每份说明书再作为一次重试的抽取任务导入，用来衡量跨 run 的重复结果。离线 Embedding
+近似于词面检索，适合做回归检查；衡量检索质量请使用配置的真实模型。
+
+`evals/retrieval/build_fixtures.py` 用于重新生成样本说明书；数据集有效性测试会检查
+每条标注是否仍出现在对应说明书中。
+
 ## 测试
 
 测试需要一个名称以 `_test` 结尾的 PostgreSQL 数据库；pytest 会拒绝清空其他任何
@@ -369,7 +399,8 @@ alembic check
     │       └── diagnosis/      # 只读 Agent、工具、网关、评测
     ├── alembic/                # 数据库迁移
     ├── evals/diagnosis/        # 版本化诊断评测用例
-    ├── scripts/                # run_diagnosis_evals.py
+    ├── evals/retrieval/        # 检索评测样本说明书与用例
+    ├── scripts/                # run_diagnosis_evals.py、run_retrieval_evals.py
     ├── tests/
     ├── Dockerfile
     └── pyproject.toml
