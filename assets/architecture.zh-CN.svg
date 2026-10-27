@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 700" width="1100" height="700" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
+<style>
+:root{--bg:#ffffff;--band:#f6f8fa;--band2:#ffffff;--fg:#1f2328;--muted:#59636e;--line:#59636e;--box:#ffffff;--stroke:#d1d9e0;--acc:#0969da;--accbg:#ddf4ff;--chip:#f6f8fa}
+@media (prefers-color-scheme: dark){:root{--bg:#0d1117;--band:#151b23;--band2:#0d1117;--fg:#f0f6fc;--muted:#9198a1;--line:#9198a1;--box:#0d1117;--stroke:#3d444d;--acc:#4493f8;--accbg:#121d2f;--chip:#151b23}}
+.bg{fill:var(--bg)} .band{fill:var(--band)} .band2{fill:var(--band2)}
+.bl{fill:var(--muted);font-size:13px;font-weight:600}
+.box{fill:var(--box);stroke:var(--stroke);stroke-width:1.2}
+.key{fill:var(--accbg);stroke:var(--acc);stroke-width:1.4}
+.ext{fill:var(--box);stroke:var(--muted);stroke-width:1.2;stroke-dasharray:5 4}
+.grp{fill:none;stroke:var(--stroke);stroke-width:1.2}
+.chip{fill:var(--chip);stroke:var(--stroke);stroke-width:1}
+.t{fill:var(--fg);font-size:14px;font-weight:600}
+.s{fill:var(--muted);font-size:11.5px}
+.c{fill:var(--fg);font-size:12px}
+.lab{fill:var(--muted);font-size:11.5px}
+.ln{stroke:var(--line);stroke-width:1.4;fill:none;marker-end:url(#a)}
+.ln2{stroke:var(--line);stroke-width:1.4;fill:none}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/></marker></defs>
+<rect class="bg" width="1100" height="700"/>
+<rect class="band" x="10" y="16" width="1080" height="92" rx="6"/>
+<text class="bl" x="24" y="66.0">使用方</text>
+<rect class="band2" x="10" y="116" width="1080" height="80" rx="6"/>
+<text class="bl" x="24" y="160.0">接入层</text>
+<rect class="band" x="10" y="204" width="1080" height="168" rx="6"/>
+<text class="bl" x="24" y="292.0">应用层</text>
+<rect class="band2" x="10" y="380" width="1080" height="94" rx="6"/>
+<text class="bl" x="24" y="431.0">数据层</text>
+<rect class="band" x="10" y="482" width="1080" height="84" rx="6"/>
+<text class="bl" x="24" y="528.0">设备接入</text>
+<rect class="band2" x="10" y="574" width="1080" height="86" rx="6"/>
+<text class="bl" x="24" y="621.0">现场设备</text>
+<rect class="box" x="130" y="40" width="250" height="44" rx="6"/>
+<text class="t" x="255.0" y="67.0" text-anchor="middle">接入工程师 / 审核员</text>
+<rect class="box" x="400" y="40" width="170" height="44" rx="6"/>
+<text class="t" x="485.0" y="67.0" text-anchor="middle">运维工程师</text>
+<rect class="box" x="590" y="40" width="170" height="44" rx="6"/>
+<text class="t" x="675.0" y="67.0" text-anchor="middle">外部系统</text>
+<path class="ln" d="M255.0,84 L410,134"/>
+<path class="ln" d="M485.0,84 L410,134"/>
+<path class="ln" d="M675.0,84 L410,134"/>
+<rect class="key" x="290" y="136" width="240" height="48" rx="6"/>
+<text class="t" x="410.0" y="157.0" text-anchor="middle">网关</text>
+<text class="s" x="410.0" y="174.0" text-anchor="middle">Caddy + oauth2-proxy · 唯一对外入口</text>
+<rect class="ext" x="880" y="136" width="200" height="48" rx="6"/>
+<text class="t" x="980.0" y="157.0" text-anchor="middle">OIDC 身份提供方</text>
+<text class="s" x="980.0" y="174.0" text-anchor="middle">Keycloak / 企业 SSO</text>
+<path class="ln" d="M530,160 H878"/>
+<text class="lab" x="704" y="154" text-anchor="middle">登录 / 换取 token</text>
+<rect class="key" x="130" y="224" width="380" height="134" rx="6"/>
+<text class="t" x="320" y="246" text-anchor="middle">control-api（FastAPI）</text>
+<rect class="chip" x="146" y="260" width="170" height="24" rx="4"/>
+<text class="c" x="231.0" y="276" text-anchor="middle">设备目录 · Profile</text>
+<rect class="chip" x="324" y="260" width="170" height="24" rx="4"/>
+<text class="c" x="409.0" y="276" text-anchor="middle">文档 · 审核台</text>
+<rect class="chip" x="146" y="292" width="170" height="24" rx="4"/>
+<text class="c" x="231.0" y="308" text-anchor="middle">检索（RAG）</text>
+<rect class="chip" x="324" y="292" width="170" height="24" rx="4"/>
+<text class="c" x="409.0" y="308" text-anchor="middle">只读诊断 Agent</text>
+<text class="s" x="320" y="342" text-anchor="middle">/api/v1 · /admin</text>
+<path class="ln" d="M410,184 V222"/>
+<text class="lab" x="418" y="207" text-anchor="start">已验证的 JWT</text>
+<rect class="box" x="580" y="224" width="250" height="134" rx="6"/>
+<text class="t" x="705" y="246" text-anchor="middle">document-worker（Celery）</text>
+<rect class="chip" x="596" y="260" width="218" height="24" rx="4"/>
+<text class="c" x="705.0" y="276" text-anchor="middle">解析 · OCR</text>
+<rect class="chip" x="596" y="292" width="218" height="24" rx="4"/>
+<text class="c" x="705.0" y="308" text-anchor="middle">分块 · 抽取 · 向量化</text>
+<path class="ln" d="M510,276 H578"/>
+<text class="lab" x="544" y="270" text-anchor="middle">投递任务</text>
+<rect class="ext" x="886" y="224" width="194" height="134" rx="6"/>
+<text class="t" x="983" y="244" text-anchor="middle">模型服务</text>
+<text class="s" x="983" y="259" text-anchor="middle">OpenAI 兼容接口</text>
+<rect class="chip" x="896" y="268" width="84" height="24" rx="4"/>
+<text class="c" x="938.0" y="284" text-anchor="middle">抽取 LLM</text>
+<rect class="chip" x="986" y="268" width="84" height="24" rx="4"/>
+<text class="c" x="1028.0" y="284" text-anchor="middle">视觉 OCR</text>
+<rect class="chip" x="896" y="298" width="84" height="24" rx="4"/>
+<text class="c" x="938.0" y="314" text-anchor="middle">Embedding</text>
+<rect class="chip" x="986" y="298" width="84" height="24" rx="4"/>
+<text class="c" x="1028.0" y="314" text-anchor="middle">诊断 LLM</text>
+<path class="ln" d="M830,312 H884"/>
+<text class="lab" x="857" y="306" text-anchor="middle">调用</text>
+<path class="ln" d="M480,224 V212 H983 V222"/>
+<text class="lab" x="735" y="207" text-anchor="middle">诊断 / 检索</text>
+<rect class="grp" x="240" y="392" width="590" height="70" rx="6"/>
+<rect class="box" x="256" y="402" width="200" height="50" rx="6"/>
+<text class="t" x="356.0" y="424.0" text-anchor="middle">PostgreSQL + pgvector</text>
+<text class="s" x="356.0" y="441.0" text-anchor="middle">业务数据 · 向量 · 审计</text>
+<rect class="box" x="468" y="402" width="150" height="50" rx="6"/>
+<text class="t" x="543.0" y="424.0" text-anchor="middle">Redis</text>
+<text class="s" x="543.0" y="441.0" text-anchor="middle">任务队列</text>
+<rect class="box" x="630" y="402" width="186" height="50" rx="6"/>
+<text class="t" x="723.0" y="424.0" text-anchor="middle">document-files 卷</text>
+<text class="s" x="723.0" y="441.0" text-anchor="middle">手册原文件</text>
+<path class="ln" d="M380,358 V390"/>
+<text class="lab" x="388" y="378" text-anchor="start">读写</text>
+<path class="ln" d="M705,358 V390"/>
+<text class="lab" x="713" y="378" text-anchor="start">读写</text>
+<rect class="ext" x="130" y="496" width="420" height="50" rx="6"/>
+<text class="t" x="340.0" y="518.0" text-anchor="middle">只读网关（外部服务，可选）</text>
+<text class="s" x="340.0" y="535.0" text-anchor="middle">POST /read-point · Modbus / BACnet / MQTT / OPC UA</text>
+<path class="ln" d="M180,358 V494"/>
+<text class="lab" x="188" y="488" text-anchor="start">只读，一次一个点位</text>
+<path class="ln" d="M340,546 V594"/>
+<rect class="box" x="130" y="596" width="950" height="52" rx="6"/>
+<text class="t" x="605.0" y="619.0" text-anchor="middle">园区物业运维设备</text>
+<text class="s" x="605.0" y="636.0" text-anchor="middle">通过只读网关接入的现场设备与控制器</text>
+<rect class="ext" x="24" y="670" width="28" height="16" rx="3"/>
+<text class="lab" x="60" y="682">虚线框为外部服务</text>
+</svg>

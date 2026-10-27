@@ -2,7 +2,7 @@
 
 # Device AI Agent
 
-**把工业设备说明书变成可审核的设备 Profile，再用一个只能“读”的 AI Agent 诊断设备。**
+**把园区物业运维设备的说明书变成可审核的设备 Profile，再用一个只能“读”的 AI Agent 诊断设备。**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
@@ -15,7 +15,7 @@
 
 ---
 
-接入一台新的工业设备，往往要有人啃完几百页说明书，把寄存器表抄进表格，再祈祷
+在园区物业运维中，接入一台新设备，往往要有人啃完几百页说明书，把寄存器表抄进表格，再祈祷
 没有抄错。设备出了问题，又得回头翻说明书、凭经验排查。
 
 Device AI Agent 把繁琐的部分自动化，同时不放弃人的控制权：
@@ -44,6 +44,13 @@ flowchart LR
     A -- 读取单个点位 --> G[只读网关] --> DEV[设备]
     A --> REP[可审计的诊断报告]
 ```
+
+## 架构
+
+<p align="center"><img src="assets/architecture.zh-CN.svg" alt="架构图" width="100%"></p>
+
+对外只开放网关；control-api、数据库和 Redis 只在内部网络中可达。组件和配置的细节见
+[开发文档](DEVELOPMENT.zh-CN.md#架构)。
 
 ## 功能
 

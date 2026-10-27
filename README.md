@@ -2,8 +2,9 @@
 
 # Device AI Agent
 
-**Turn industrial device manuals into reviewable device profiles, and diagnose
-devices with an AI agent that can only read.**
+**Turn manuals for campus property operations and maintenance equipment into
+reviewable device profiles, and diagnose devices with an AI agent that can only
+read.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
@@ -16,9 +17,10 @@ English | [简体中文](README.zh-CN.md)
 
 ---
 
-Integrating a new industrial device usually means someone reads a 300-page
-manual, copies register maps into a spreadsheet, and hopes nothing was
-mistyped. Diagnosing it later means more manual reading and more guesswork.
+In campus property operations and maintenance, integrating a new device
+usually means someone reads a 300-page manual, copies register maps into a
+spreadsheet, and hopes nothing was mistyped. Diagnosing it later means more
+manual reading and more guesswork.
 
 Device AI Agent automates the tedious parts without giving up control:
 
@@ -49,6 +51,14 @@ flowchart LR
     A -- read one point --> G[Read-only gateway] --> DEV[Device]
     A --> REP[Audited report]
 ```
+
+## Architecture
+
+<p align="center"><img src="assets/architecture.svg" alt="Architecture" width="100%"></p>
+
+Only the gateway is exposed; control-api, the database and Redis are reachable
+only on the internal network. See the [developer guide](DEVELOPMENT.md#architecture)
+for components and configuration.
 
 ## Features
 
