@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文档上传 · Device AI Agent</title>
+  <link rel="stylesheet" href="/console/style.css">
+  <link rel="stylesheet" href="/console/upload.css">
+  <script type="module" src="/console/upload.js"></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="/"><span class="brand-icon">D</span><span>Device AI Agent<small>设备智能管理平台</small></span></a>
+    <p class="nav-label">工作空间</p>
+    <a class="nav-link" href="/">← 设备工作台</a>
+    <nav aria-label="文档导航"><a class="nav-link selected" href="/upload">↑ 文档上传</a><a class="nav-link" href="/admin/documents">▧ 文档审核 ↗</a></nav>
+    <div class="sidebar-foot"><span class="dot"></span> 本地工作空间<small>Control API · 文档管理</small></div>
+  </aside>
+  <main>
+    <header><a href="/">工作空间</a><span>文档上传</span></header>
+    <section class="intro"><div><p class="eyebrow">DOCUMENT INTELLIGENCE</p><h1>上传设备文档</h1><p>上传产品手册，提取设备配置，再由人工审核导入。</p></div><a class="text-button" href="/admin/documents">查看全部文档 →</a></section>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section class="workspace">
+      <div class="section-head"><div><h2>选择文档</h2><p>支持 PDF、DOCX。文件大小与内容安全检查以服务端配置为准。</p></div></div>
+      <form id="upload-form" class="detail-body">
+        <label class="file-area" for="document-file"><strong>选择设备说明书</strong><input id="document-file" name="file" type="file" accept=".pdf,.docx" required><span id="file-info">请选择一个 PDF 或 DOCX 文件</span></label>
+        <label class="field" for="device-model">关联设备型号（可选）<select id="device-model" name="device_model_id"><option value="">不关联，交由后续审核确认</option></select></label>
+        <p id="model-status" class="help" role="status"></p>
+        <button id="submit-upload" type="submit" class="primary">上传文档</button><p class="help">上传成功后可单独启动 AI 提取。提取结果须经人工审核，导入后为草稿。</p>
+      </form>
+    </section>
+    <section id="uploaded" class="workspace" hidden>
+      <div class="section-head"><div><h2>文档状态</h2><p id="document-summary"></p></div><a id="review-link" class="text-button" href="/admin/documents">查看文档与审核 →</a></div>
+      <div class="detail-body"><p id="document-validation"></p><button id="extract" class="primary" type="button">启动 AI 提取</button><p class="help">需配置提取模型并启动 Redis 与文档 Worker。此操作会调用已配置的 AI 服务。</p><div id="run-result" role="status" aria-live="polite"></div><button id="refresh-run" class="text-button" type="button" hidden>刷新处理状态 ↻</button></div>
+    </section>
+    <section class="workspace"><div class="section-head"><div><h2>查看已有文档</h2><p>使用文档 ID 恢复查看，或前往文档审核查看全部记录。</p></div></div><form id="lookup-form" class="detail-body lookup"><label for="document-id">文档 ID</label><input id="document-id" type="number" min="1" step="1" required><button class="primary" type="submit">查看文档</button></form></section>
+    <footer><span>上传 → 提取 → 人工审核 → 导入草稿</span></footer>
+  </main>
+</body>
+</html>

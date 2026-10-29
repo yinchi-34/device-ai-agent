@@ -22,6 +22,10 @@ def create_app() -> FastAPI:
     async def console() -> FileResponse:
         return FileResponse(console_dir / "index.html")
 
+    @app.get("/upload", include_in_schema=False)
+    async def upload_page() -> FileResponse:
+        return FileResponse(console_dir / "upload.html")
+
     @app.middleware("http")
     async def add_admin_security_headers(request: Request, call_next):
         response = await call_next(request)

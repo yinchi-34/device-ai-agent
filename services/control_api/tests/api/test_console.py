@@ -4,6 +4,19 @@ from app.main import create_app
 from tests.api.test_testing_api import _released_device_graph
 
 
+async def test_upload_page_is_available_without_database():
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()), base_url="http://test"
+    ) as browser:
+        page = await browser.get("/upload")
+        assert page.status_code == 200
+        assert 'type="file"' in page.text
+        assert '.pdf,.docx' in page.text
+        assert 'id="upload-form"' in page.text
+        home = await browser.get("/")
+        assert 'href="/upload"' in home.text
+
+
 async def test_console_serves_without_database():
     async with AsyncClient(
         transport=ASGITransport(app=create_app()), base_url="http://test"

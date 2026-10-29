@@ -65,6 +65,13 @@ Use **查看示例数据** to explore a built-in meter profile and simulated val
 without writing to the database. The example banner remains visible until you
 switch back to real data.
 
+The **文档上传** sidebar entry opens `/upload`, where PDF/DOCX uploads can
+optionally be associated with a device model. Uploading does not start AI work;
+use **启动 AI 提取** after upload to queue extraction, then refresh its status
+or follow the document review link. Extraction requires configured providers,
+Redis, and a running document worker. The returned document and task IDs are
+kept in the page URL so a browser refresh can restore the displayed status.
+
 ```bash
 # lint
 ruff check services/control_api
