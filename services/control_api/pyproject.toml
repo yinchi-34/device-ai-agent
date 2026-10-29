@@ -47,4 +47,5 @@ include = ["app*"]
 exclude = ["alembic*", "tests*"]
 
 [tool.setuptools.package-data]
+"app" = ["console/*.html", "console/*.css", "console/*.js"]
 "app.modules.document" = ["templates/**/*.html"]

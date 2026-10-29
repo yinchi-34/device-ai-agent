@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备工作台 · Device AI Agent</title>
+  <link rel="stylesheet" href="/console/style.css">
+  <script src="/console/example.js" defer></script>
+  <script src="/console/app.js" defer></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="/"><span class="brand-icon">D</span><span>Device AI Agent<small>设备智能管理平台</small></span></a>
+    <p class="nav-label">工作空间</p>
+    <nav aria-label="主导航">
+      <button data-view="models" class="active">◈ <span>设备型号</span></button>
+      <button data-view="profiles">▤ <span>配置版本</span></button>
+      <button data-view="capabilities">◇ <span>能力目录</span></button>
+      <button data-view="devices">⌁ <span>设备测试</span></button>
+    </nav>
+    <p class="nav-label">工具</p>
+    <a class="nav-link" href="/admin/documents">▧ 文档审核 <span>↗</span></a>
+    <a class="nav-link" href="/docs" target="_blank" rel="noopener">↗ API 文档</a>
+    <div class="sidebar-foot"><span class="dot"></span> 本地工作空间<small>Control API · 功能预览</small></div>
+  </aside>
+  <main>
+    <header><span>工作空间 <b>/</b> <span id="breadcrumb">设备型号</span></span><span id="health" class="badge">正在检查服务…</span></header>
+    <section class="intro"><div><p class="eyebrow">DEVICE WORKSPACE</p><h1>设备工作台</h1><p>从设备定义到能力验证，查看每一步的真实配置。</p></div><div><button id="example" class="text-button">查看示例数据</button> <button id="refresh" class="primary">↻ 刷新数据</button></div></section>
+    <p id="example-banner" hidden>示例预览 · 以下均为内置示例数据，校验结果为模拟结果。</p>
+    <div class="stats" id="stats" aria-label="数据概览"></div>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section class="workspace">
+      <div class="section-head"><div><h2 id="view-title">设备型号</h2><p id="view-description">管理设备厂商、型号与分类。</p></div><label class="search">⌕ <input id="search" type="search" placeholder="搜索名称或编码" aria-label="搜索名称或编码"></label></div>
+      <div id="content" aria-live="polite"><p class="empty">正在读取项目数据…</p></div>
+    </section>
+    <section id="detail" class="workspace" hidden></section>
+    <footer><span>数据来自当前 Control API</span><span>配置 → 点位 → 能力 → 命令 → 测试</span></footer>
+  </main>
+</body>
+</html>

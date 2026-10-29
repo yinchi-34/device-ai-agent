@@ -8,6 +8,15 @@ from app.modules.device.models import DeviceProfileVersion
 from app.modules.testing.models import DeviceConnection, DeviceInstance
 
 
+async def list_instances(session: AsyncSession) -> Sequence[DeviceInstance]:
+    result = await session.scalars(
+        select(DeviceInstance)
+        .where(DeviceInstance.is_deleted.is_(False))
+        .order_by(DeviceInstance.id)
+    )
+    return result.all()
+
+
 async def get_instance(
     session: AsyncSession, device_id: int
 ) -> DeviceInstance | None:

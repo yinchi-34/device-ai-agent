@@ -57,6 +57,16 @@ async def list_device_models(session: AsyncSession) -> Sequence[m.DeviceModel]:
     return result.all()
 
 
+async def list_profiles(session: AsyncSession) -> Sequence[m.DeviceProfileVersion]:
+    result = await session.scalars(
+        _live(
+            select(m.DeviceProfileVersion).order_by(m.DeviceProfileVersion.id),
+            m.DeviceProfileVersion,
+        )
+    )
+    return result.all()
+
+
 async def list_category_capabilities(
     session: AsyncSession, category_id: int
 ) -> Sequence[m.DeviceCategoryCapability]:

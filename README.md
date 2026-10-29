@@ -46,6 +46,25 @@ Requirements: Python 3.12 and a PostgreSQL instance (or
 
 ## Development
 
+### Local workbench
+
+With PostgreSQL running and `services/control_api/.env` configured, start the
+Chinese-language workbench (no frontend build required):
+
+```powershell
+cd services/control_api
+.\.venv\Scripts\python.exe scripts/run_console.py
+```
+
+Open `http://127.0.0.1:8000/` to browse device models, profile versions,
+points, capability bindings, generated commands, and device test options.
+Connection validation checks JSON Schema only; it does not connect to devices.
+The sidebar links to the existing document review login and API documentation.
+All lists use the current database; unavailable data is shown as a load error.
+Use **查看示例数据** to explore a built-in meter profile and simulated validation
+without writing to the database. The example banner remains visible until you
+switch back to real data.
+
 ```bash
 # lint
 ruff check services/control_api

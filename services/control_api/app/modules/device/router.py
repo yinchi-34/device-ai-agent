@@ -105,6 +105,11 @@ async def create_profile(
     return profile
 
 
+@router.get("/profiles", response_model=list[schemas.ProfileOut])
+async def list_profiles(session: AsyncSession = Depends(get_db_session)) -> object:
+    return await repository.list_profiles(session)
+
+
 @router.get("/profiles/{profile_id}", response_model=schemas.ProfileOut)
 async def get_profile(
     profile_id: int, session: AsyncSession = Depends(get_db_session)

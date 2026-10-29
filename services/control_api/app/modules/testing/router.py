@@ -2,10 +2,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.testing import schemas
+from app.modules.testing import repository, schemas
 from app.modules.testing.service import TestingService
 
 router = APIRouter(prefix="/api/v1", tags=["testing"])
+
+
+@router.get("/devices", response_model=list[schemas.DeviceInstanceOut])
+async def list_devices(session: AsyncSession = Depends(get_db_session)) -> object:
+    return await repository.list_instances(session)
 
 
 @router.post("/devices", status_code=201, response_model=schemas.DeviceInstanceOut)

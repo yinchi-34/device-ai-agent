@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.errors import DomainError
 from app.modules.device.router import router as device_router
@@ -12,6 +15,12 @@ from app.modules.testing.router import router as testing_router
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Device AI Agent Control API")
+    console_dir = Path(__file__).parent / "console"
+    app.mount("/console", StaticFiles(directory=console_dir), name="console")
+
+    @app.get("/", include_in_schema=False)
+    async def console() -> FileResponse:
+        return FileResponse(console_dir / "index.html")
 
     @app.middleware("http")
     async def add_admin_security_headers(request: Request, call_next):
