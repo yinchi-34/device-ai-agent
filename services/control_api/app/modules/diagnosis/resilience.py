@@ -194,7 +194,10 @@ class ResilientDiagnosisProvider:
                         {"route": route.name, "attempt": attempt, "error_code": exc.code}
                     )
                     if not exc.retryable:
-                        # Client-side faults say nothing about availability.
+                        # The endpoint answered, so it is available; retrying an
+                        # identical bad request is pointless. Recording success
+                        # also releases a half-open probe.
+                        route.breaker.record_success()
                         break
                     route.breaker.record_failure()
                     if attempt == self.retry_policy.max_attempts:

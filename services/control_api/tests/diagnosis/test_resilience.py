@@ -179,6 +179,31 @@ def test_breaker_half_opens_after_cooldown_and_allows_a_single_probe():
     assert breaker.state == "closed"
 
 
+async def test_non_retryable_probe_releases_a_half_open_breaker():
+    now = [0.0]
+    breaker = CircuitBreaker(failure_threshold=1, cooldown_seconds=5, clock=lambda: now[0])
+    breaker.record_failure()
+    now[0] = 5.0
+    provider = ResilientDiagnosisProvider(
+        [
+            ModelRoute(
+                "primary",
+                ScriptedProvider(
+                    ModelProviderError("model_request_rejected", retryable=False)
+                ),
+                breaker,
+            )
+        ],
+        sleep=RecordingSleep(),
+    )
+
+    with pytest.raises(ModelProviderError):
+        await _decide(provider)
+
+    assert breaker.state == "closed"
+    assert breaker.allow()
+
+
 # --- provider error classification -------------------------------------------
 
 

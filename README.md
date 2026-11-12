@@ -62,7 +62,10 @@ flowchart LR
 | **Review console** | Web UI to compare AI output with evidence, edit, approve, reject, and import, with a full audit trail |
 | **Scoped RAG** | pgvector search always limited to a document or device model |
 | **Read-only diagnosis** | Bounded tool-calling loop, step limit, per-run locking, evidence-backed reports |
-| **Evaluation harness** | Versioned cases measuring accuracy, escalation rate, dangerous-action rate, cost, latency |
+| **Runtime reliability** | Model and gateway retries with backoff below the agent loop, fallback model, circuit breakers, vector-to-keyword search degradation |
+| **Context and state** | Slimmed tool results, budgeted compaction of older steps, structured working memory persisted per step and reused on resume |
+| **Grounded conclusions** | Classification, cited values and manual quotes are checked against the audit trail; anything unsupported goes to a human |
+| **Evaluation harness** | Versioned cases measuring accuracy, escalation rate, dangerous-action rate, faithfulness to evidence, cost, latency |
 | **Bring your own models** | Any OpenAI-compatible endpoint, configured separately for extraction, vision, embeddings, and diagnosis |
 
 ## Quick start
@@ -131,6 +134,10 @@ curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/diag
 - [x] API authentication: OIDC identity provider, Caddy + oauth2-proxy gateway, JWT-verifying API
 - [x] CI: lint, migration check, tests, compose and gateway config on every PR
 - [x] Deployment guide: [DEPLOYMENT.md](DEPLOYMENT.md)
+- [x] Agent runtime: retry and degradation, context compaction and working memory, evidence grounding
+- [ ] Skill layer: tools grouped into task skills, starting with a diagnosis skill
+- [ ] Experience distillation: reviewed, evaluated and versioned skills learned from past cases
+- [ ] Read-only MCP server for point reads, manual search and profile lookup
 
 ## Security
 
