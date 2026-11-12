@@ -11,6 +11,7 @@ from app.modules.diagnosis.contracts import (
     StepCallback,
     ToolDefinition,
 )
+from app.modules.diagnosis.grounding import check_grounding
 
 _FINISH_TOOL = ToolDefinition(
     name="finish_diagnosis",
@@ -43,6 +44,34 @@ _FINISH_TOOL = ToolDefinition(
                 "minItems": 1,
                 "items": {"type": "integer", "minimum": 1},
             },
+            "cited_values": {
+                "type": "array",
+                "description": "Every observed value the summary relies on, "
+                "with the audit step it was observed in.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["step", "value"],
+                    "properties": {
+                        "step": {"type": "integer", "minimum": 1},
+                        "value": {"type": ["number", "string"]},
+                    },
+                },
+            },
+            "manual_citations": {
+                "type": "array",
+                "description": "Verbatim manual quotes the summary relies on.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["step", "stable_ref", "quote"],
+                    "properties": {
+                        "step": {"type": "integer", "minimum": 1},
+                        "stable_ref": {"type": "string", "minLength": 1},
+                        "quote": {"type": "string", "minLength": 1, "maxLength": 300},
+                    },
+                },
+            },
         },
     },
 )
@@ -71,10 +100,15 @@ class DiagnosisAgent:
     """A bounded model -> tool -> observation feedback loop."""
 
     def __init__(
-        self, provider: DiagnosisModelProvider, toolbox: DiagnosisToolbox
+        self,
+        provider: DiagnosisModelProvider,
+        toolbox: DiagnosisToolbox,
+        *,
+        min_confidence: float = 0.5,
     ) -> None:
         self.provider = provider
         self.toolbox = toolbox
+        self.min_confidence = min_confidence
 
     async def run(
         self,
@@ -126,6 +160,27 @@ class DiagnosisAgent:
                         "invalid_evidence_reference",
                         on_step,
                     )
+                grounding = check_grounding(
+                    decision.arguments,
+                    steps,
+                    symptom=diagnosis.symptom,
+                    min_confidence=self.min_confidence,
+                )
+                if not grounding.grounded:
+                    return await self._terminal_policy_violation(
+                        steps,
+                        sequence_number,
+                        decision.tool_name,
+                        decision.arguments,
+                        decision.rationale,
+                        decision.usage,
+                        "evidence_grounding_failed",
+                        on_step,
+                        violations=grounding.violations,
+                        evidence_step_numbers=decision.arguments[
+                            "evidence_step_numbers"
+                        ],
+                    )
                 step = DiagnosisStep(
                     sequence_number=sequence_number,
                     tool_name=decision.tool_name,
@@ -135,7 +190,14 @@ class DiagnosisAgent:
                     usage=decision.usage,
                 )
                 await _append_step(steps, step, on_step)
-                return DiagnosisOutcome("completed", decision.arguments, steps)
+                report = {
+                    **decision.arguments,
+                    "grounding": {
+                        "checked": True,
+                        "unverified_numbers": grounding.unverified_numbers,
+                    },
+                }
+                return DiagnosisOutcome("completed", report, steps)
 
             if decision.tool_name == "escalate_to_human":
                 if not Draft202012Validator(_ESCALATE_TOOL.parameters).is_valid(
@@ -220,8 +282,13 @@ class DiagnosisAgent:
         usage: dict,
         reason: str,
         on_step: StepCallback | None,
+        *,
+        violations: list[dict] | None = None,
+        evidence_step_numbers: list[int] | None = None,
     ) -> DiagnosisOutcome:
         result = {"error_code": reason, "requested_tool": requested_tool}
+        if violations:
+            result["violations"] = violations
         step = DiagnosisStep(
             sequence_number=sequence_number,
             tool_name=requested_tool,
@@ -231,15 +298,16 @@ class DiagnosisAgent:
             usage=usage,
         )
         await _append_step(steps, step, on_step)
-        return DiagnosisOutcome(
-            "escalated",
-            {
-                "reason": reason,
-                "required_action": "Human review is required.",
-                "evidence_step_numbers": [sequence_number],
-            },
-            steps,
-        )
+        report = {
+            "reason": reason,
+            "required_action": "Human review is required.",
+            "evidence_step_numbers": [*(evidence_step_numbers or []), sequence_number],
+        }
+        if violations:
+            # The rejected conclusion is kept for the reviewer, clearly labelled.
+            report["violations"] = violations
+            report["rejected_conclusion"] = arguments
+        return DiagnosisOutcome("escalated", report, steps)
 
 
 def _valid_evidence_references(arguments: dict, *, completed_step_count: int) -> bool:

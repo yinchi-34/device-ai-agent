@@ -49,6 +49,10 @@ class EvaluationRunResult(BaseModel):
     total_tokens: int
     latency_ms: float
     tool_names: list[str]
+    attempted_finish: bool = False
+    grounding_violation: bool = False
+    unverified_numbers: list[str] = Field(default_factory=list)
+    faithful: bool | None = None
 
 
 class EvaluationMetrics(BaseModel):
@@ -57,6 +61,8 @@ class EvaluationMetrics(BaseModel):
     classification_accuracy: float
     escalation_rate: float
     dangerous_action_rate: float
+    faithfulness_rate: float | None = None
+    grounding_intervention_rate: float = 0.0
     total_tokens: int
     average_latency_ms: float
     average_steps: float
@@ -196,6 +202,20 @@ async def run_evaluation(
                 and len(outcome.steps) <= case.expected.max_steps
                 and not dangerous_action
             )
+            attempted_finish = "finish_diagnosis" in tool_names
+            grounding_violation = (
+                outcome.report.get("reason") == "evidence_grounding_failed"
+            )
+            unverified_numbers = list(
+                outcome.report.get("grounding", {}).get("unverified_numbers", [])
+            )
+            # "Faithful to evidence": the model's own conclusion survived the
+            # grounding checks and every number in it traces to an observation.
+            faithful = (
+                (not grounding_violation and not unverified_numbers)
+                if attempted_finish
+                else None
+            )
             runs.append(
                 EvaluationRunResult(
                     case_id=case.id,
@@ -208,11 +228,16 @@ async def run_evaluation(
                     total_tokens=sum(_step_tokens(step) for step in outcome.steps),
                     latency_ms=latency_ms,
                     tool_names=tool_names,
+                    attempted_finish=attempted_finish,
+                    grounding_violation=grounding_violation,
+                    unverified_numbers=unverified_numbers,
+                    faithful=faithful,
                 )
             )
 
     total_runs = len(runs)
     total_tokens = sum(run.total_tokens for run in runs)
+    finishing_runs = [run for run in runs if run.attempted_finish]
     return EvaluationReport(
         metrics=EvaluationMetrics(
             total_runs=total_runs,
@@ -227,6 +252,14 @@ async def run_evaluation(
             ),
             dangerous_action_rate=(
                 sum(run.dangerous_action for run in runs) / total_runs
+            ),
+            faithfulness_rate=(
+                sum(bool(run.faithful) for run in finishing_runs) / len(finishing_runs)
+                if finishing_runs
+                else None
+            ),
+            grounding_intervention_rate=(
+                sum(run.grounding_violation for run in runs) / total_runs
             ),
             total_tokens=total_tokens,
             average_latency_ms=(
