@@ -9,19 +9,72 @@ from app.modules.diagnosis.gateway import (
     UnavailableReadGateway,
 )
 from app.modules.diagnosis.openai_compatible import OpenAICompatibleDiagnosisProvider
+from app.modules.diagnosis.resilience import (
+    ModelRoute,
+    ResilientDiagnosisProvider,
+    RetryingReadGateway,
+    RetryPolicy,
+    shared_breaker,
+)
 from app.modules.diagnosis.service import DiagnosisService
 from app.modules.document.openai_compatible import OpenAICompatibleEmbeddingProvider
 
 router = APIRouter(prefix="/api/v1", tags=["diagnosis"])
 
 
-def build_diagnosis_provider() -> OpenAICompatibleDiagnosisProvider:
+def build_diagnosis_provider() -> ResilientDiagnosisProvider:
     settings = Settings()
-    return OpenAICompatibleDiagnosisProvider(
-        base_url=settings.diagnosis_llm_base_url,
-        api_key=settings.diagnosis_llm_api_key,
-        model=settings.diagnosis_llm_model,
-        timeout_seconds=settings.diagnosis_llm_timeout_seconds,
+    routes = [
+        ModelRoute(
+            name=f"primary:{settings.diagnosis_llm_model}",
+            provider=OpenAICompatibleDiagnosisProvider(
+                base_url=settings.diagnosis_llm_base_url,
+                api_key=settings.diagnosis_llm_api_key,
+                model=settings.diagnosis_llm_model,
+                timeout_seconds=settings.diagnosis_llm_timeout_seconds,
+                context_token_budget=settings.diagnosis_context_token_budget,
+                context_recent_steps=settings.diagnosis_context_recent_steps,
+            ),
+            breaker=_model_breaker(settings, settings.diagnosis_llm_base_url,
+                                   settings.diagnosis_llm_model),
+        )
+    ]
+    if settings.diagnosis_llm_fallback_model:
+        fallback_base_url = (
+            settings.diagnosis_llm_fallback_base_url or settings.diagnosis_llm_base_url
+        )
+        routes.append(
+            ModelRoute(
+                name=f"fallback:{settings.diagnosis_llm_fallback_model}",
+                provider=OpenAICompatibleDiagnosisProvider(
+                    base_url=fallback_base_url,
+                    api_key=settings.diagnosis_llm_fallback_api_key
+                    or settings.diagnosis_llm_api_key,
+                    model=settings.diagnosis_llm_fallback_model,
+                    timeout_seconds=settings.diagnosis_llm_timeout_seconds,
+                    context_token_budget=settings.diagnosis_context_token_budget,
+                    context_recent_steps=settings.diagnosis_context_recent_steps,
+                ),
+                breaker=_model_breaker(
+                    settings, fallback_base_url, settings.diagnosis_llm_fallback_model
+                ),
+            )
+        )
+    return ResilientDiagnosisProvider(
+        routes,
+        retry_policy=RetryPolicy(
+            max_attempts=settings.diagnosis_llm_max_attempts,
+            base_delay_seconds=settings.diagnosis_llm_retry_base_seconds,
+            max_delay_seconds=settings.diagnosis_llm_retry_max_seconds,
+        ),
+    )
+
+
+def _model_breaker(settings: Settings, base_url: str, model: str):
+    return shared_breaker(
+        f"model:{base_url}:{model}",
+        failure_threshold=settings.diagnosis_llm_circuit_failure_threshold,
+        cooldown_seconds=settings.diagnosis_llm_circuit_cooldown_seconds,
     )
 
 
@@ -29,10 +82,22 @@ def build_read_gateway():
     settings = Settings()
     if not settings.diagnosis_read_gateway_url:
         return UnavailableReadGateway()
-    return HttpReadOnlyRegisterGateway(
-        base_url=settings.diagnosis_read_gateway_url,
-        token=settings.diagnosis_read_gateway_token,
-        timeout_seconds=settings.diagnosis_read_gateway_timeout_seconds,
+    return RetryingReadGateway(
+        HttpReadOnlyRegisterGateway(
+            base_url=settings.diagnosis_read_gateway_url,
+            token=settings.diagnosis_read_gateway_token,
+            timeout_seconds=settings.diagnosis_read_gateway_timeout_seconds,
+        ),
+        retry_policy=RetryPolicy(
+            max_attempts=settings.diagnosis_read_gateway_max_attempts,
+            base_delay_seconds=0.2,
+            max_delay_seconds=2.0,
+        ),
+        breaker=shared_breaker(
+            f"read_gateway:{settings.diagnosis_read_gateway_url}",
+            failure_threshold=settings.diagnosis_read_gateway_circuit_failure_threshold,
+            cooldown_seconds=settings.diagnosis_read_gateway_circuit_cooldown_seconds,
+        ),
     )
 
 

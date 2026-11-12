@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import text
@@ -7,15 +8,18 @@ from app.core.errors import DomainError
 from app.modules.device.enums import ProfileStatus
 from app.modules.diagnosis import repository
 from app.modules.diagnosis.agent import DiagnosisAgent
-from app.modules.diagnosis.contracts import DiagnosisInput
+from app.modules.diagnosis.contracts import DiagnosisInput, WorkingMemory
 from app.modules.diagnosis.contracts import DiagnosisStep as AuditStep
 from app.modules.diagnosis.gateway import ReadOnlyRegisterGateway
+from app.modules.diagnosis.memory import memory_to_json, resume_memory
 from app.modules.diagnosis.models import DiagnosisRun, DiagnosisStep
+from app.modules.diagnosis.resilience import ModelProviderError
 from app.modules.diagnosis.tools import RuntimeDiagnosisToolbox
 from app.modules.document.providers import EmbeddingProvider
 from app.modules.testing import repository as testing_repository
 
 _DIAGNOSIS_RUN_LOCK_NAMESPACE = 0x44494147
+logger = logging.getLogger(__name__)
 
 
 async def _try_acquire_run_lock(
@@ -161,7 +165,9 @@ class DiagnosisService:
             embedding_provider=embedding_provider,
         )
 
-        async def persist_step(step: AuditStep) -> None:
+        memory, _ = resume_memory(run.working_memory, existing_steps)
+
+        async def persist_step(step: AuditStep, memory: WorkingMemory) -> None:
             self.session.add(
                 DiagnosisStep(
                     diagnosis_run_id=run.id,
@@ -174,6 +180,7 @@ class DiagnosisService:
                 )
             )
             run.current_step_count = step.sequence_number
+            run.working_memory = memory_to_json(memory)
             await self.session.commit()
 
         try:
@@ -186,14 +193,22 @@ class DiagnosisService:
                 ),
                 existing_steps=existing_steps,
                 on_step=persist_step,
+                initial_memory=memory,
             )
-        except RuntimeError as exc:
-            run.status = "failed"
-            run.error_code = "diagnosis_execution_failed"
-            run.error_detail = {"type": type(exc).__name__}
-            run.finished_at = datetime.now(UTC)
-            await self.session.commit()
-            return await self.get_run(run.id)
+        except ModelProviderError as exc:
+            # Retries and fallbacks were already exhausted below the agent loop.
+            return await self._mark_failed(
+                run.id,
+                {"type": type(exc).__name__, "cause": exc.code, **exc.detail},
+            )
+        except Exception as exc:
+            # Any other fault must not leave the run stuck in "running". A failed
+            # run keeps its persisted steps and can be resumed by executing again.
+            logger.exception("diagnosis run %s failed", run.id)
+            await self.session.rollback()
+            return await self._mark_failed(
+                run.id, {"type": type(exc).__name__, "cause": "internal_error"}
+            )
 
         run.status = outcome.status
         run.final_report = outcome.report
@@ -201,6 +216,15 @@ class DiagnosisService:
         run.usage_metadata = _aggregate_usage(outcome.steps)
         await self.session.commit()
         return await self.get_run(run.id)
+
+    async def _mark_failed(self, run_id: int, detail: dict) -> DiagnosisRun:
+        run = await self.get_run(run_id)
+        run.status = "failed"
+        run.error_code = "diagnosis_execution_failed"
+        run.error_detail = detail
+        run.finished_at = datetime.now(UTC)
+        await self.session.commit()
+        return await self.get_run(run_id)
 
 
 def _aggregate_usage(steps: list[AuditStep]) -> dict[str, int]:

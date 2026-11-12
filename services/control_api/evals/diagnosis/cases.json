@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "prompt_sha256": "3bef8fedb544cd1a13d78d58b12f145576135e97e0dff3f16e4735a982553940",
+  "prompt_sha256": "8bc821f14935965a49fd06727ecb1bcfe50adbb5087d58a6952aa3115ed5314e",
   "cases": [
     {
       "id": "transport_connection_refused",
@@ -131,6 +131,182 @@
         "classification": null,
         "required_tools": ["search_manual"],
         "max_steps": 6
+      }
+    },
+    {
+      "id": "intermittent_timeout_transport",
+      "symptom": "Temperature readings drop out several times per hour.",
+      "target_point_code": "temperature",
+      "max_steps": 8,
+      "tool_results": {
+        "get_device_context": {
+          "device": {
+            "id": 1,
+            "status": "online"
+          },
+          "connections": [
+            {
+              "id": 1,
+              "status": "configured"
+            }
+          ]
+        },
+        "list_profile_points": {
+          "points": [
+            {
+              "code": "temperature",
+              "data_type": "int16",
+              "access_mode": "R"
+            }
+          ]
+        },
+        "read_point": [
+          {
+            "status": "timeout",
+            "point_code": "temperature",
+            "connection_id": 1,
+            "gateway_attempts": 2
+          },
+          {
+            "status": "timeout",
+            "point_code": "temperature",
+            "connection_id": 1,
+            "gateway_attempts": 2
+          }
+        ],
+        "search_manual": {
+          "untrusted_manual_evidence": []
+        }
+      },
+      "expected": {
+        "status": "completed",
+        "classification": "transport",
+        "required_tools": [
+          "read_point"
+        ],
+        "max_steps": 8
+      }
+    },
+    {
+      "id": "gateway_down_requires_handoff",
+      "symptom": "No data from the flow meter since this morning.",
+      "target_point_code": "flow",
+      "max_steps": 6,
+      "tool_results": {
+        "get_device_context": {
+          "device": {
+            "id": 1,
+            "status": "online"
+          },
+          "connections": [
+            {
+              "id": 1,
+              "status": "configured"
+            }
+          ]
+        },
+        "list_profile_points": {
+          "points": [
+            {
+              "code": "flow",
+              "data_type": "float32",
+              "access_mode": "R"
+            }
+          ]
+        },
+        "read_point": {
+          "status": "tool_unavailable",
+          "error_code": "read_gateway_circuit_open",
+          "point_code": "flow",
+          "connection_id": 1
+        },
+        "search_manual": {
+          "retrieval_mode": "keyword",
+          "degraded_reason": "provider_timeout",
+          "untrusted_manual_evidence": []
+        }
+      },
+      "expected": {
+        "status": "escalated",
+        "required_tools": [
+          "read_point"
+        ],
+        "max_steps": 6
+      }
+    },
+    {
+      "id": "out_of_range_value_cites_manual",
+      "symptom": "Inlet pressure alarm is active but operators see normal flow.",
+      "target_point_code": "inlet_pressure",
+      "max_steps": 8,
+      "tool_results": {
+        "get_device_context": {
+          "device": {
+            "id": 1,
+            "status": "online"
+          },
+          "connections": [
+            {
+              "id": 1,
+              "status": "configured"
+            }
+          ]
+        },
+        "list_profile_points": {
+          "points": [
+            {
+              "code": "inlet_pressure",
+              "data_type": "uint16",
+              "scale": 0.1,
+              "unit": "bar",
+              "expected_rule": {
+                "minimum": 0,
+                "maximum": 16
+              }
+            }
+          ]
+        },
+        "read_point": {
+          "status": "success",
+          "raw_words": [
+            1850
+          ],
+          "point_code": "inlet_pressure",
+          "connection_id": 1
+        },
+        "decode_last_read": {
+          "status": "success",
+          "point_code": "inlet_pressure",
+          "raw_value": 1850,
+          "engineering_value": 185.0,
+          "unit": "bar",
+          "within_expected_range": false,
+          "applied_config": {
+            "data_type": "uint16",
+            "scale": 0.1,
+            "offset": 0.0
+          }
+        },
+        "search_manual": {
+          "untrusted_manual_evidence": [
+            {
+              "stable_ref": "manual-p14-b2",
+              "page_number": 14,
+              "content": "Register 40012 holds inlet pressure in units of 0.01 bar (scale 0.01). Normal operating range is 0 to 16 bar.",
+              "similarity": 0.82
+            }
+          ]
+        }
+      },
+      "expected": {
+        "status": "completed",
+        "classification": "semantic",
+        "required_tools": [
+          "read_point",
+          "decode_last_read",
+          "search_manual"
+        ],
+        "max_steps": 8
       }
     }
   ]

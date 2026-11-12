@@ -14,7 +14,7 @@ class ScriptedProvider:
     decisions: list[AgentDecision]
     calls: list[list[dict[str, Any]]] = field(default_factory=list)
 
-    async def decide(self, *, diagnosis, steps, tools):
+    async def decide(self, *, diagnosis, steps, tools, memory=None):
         self.calls.append([step.result for step in steps])
         return self.decisions.pop(0)
 

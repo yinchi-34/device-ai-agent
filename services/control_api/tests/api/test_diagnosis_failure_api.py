@@ -7,7 +7,7 @@ from tests.api.test_diagnosis_api import _make_released_device
 
 
 class FailingProvider:
-    async def decide(self, *, diagnosis, steps, tools):
+    async def decide(self, *, diagnosis, steps, tools, memory=None):
         raise RuntimeError("provider unavailable")
 
 

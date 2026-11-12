@@ -1,7 +1,8 @@
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
@@ -160,4 +161,50 @@ async def search_document_chunks(
             similarity=1.0 - float(row_distance),
         )
         for chunk, row_distance in rows
+    ]
+
+
+_KEYWORD_PATTERN = re.compile(r"[\w.%-]{2,}", re.UNICODE)
+
+
+async def keyword_search_document_chunks(
+    session: AsyncSession,
+    *,
+    query: str,
+    device_model_id: int,
+    limit: int = 10,
+) -> Sequence[DocumentSearchResult]:
+    """Degraded retrieval used when the embedding provider is unavailable.
+
+    Ranks chunks by how many distinct query terms they contain. It is coarse, but
+    it keeps manual evidence reachable instead of failing the tool outright.
+    """
+    terms = list(dict.fromkeys(_KEYWORD_PATTERN.findall(query.casefold())))[:8]
+    if not terms:
+        return []
+    lowered = func.lower(DocumentChunk.content)
+    matches = [lowered.contains(term, autoescape=True) for term in terms]
+    score = sum(cast(match, Integer) for match in matches).label("score")
+    statement = (
+        select(DocumentChunk, score)
+        .join(SourceDocument, SourceDocument.id == DocumentChunk.source_document_id)
+        .where(
+            SourceDocument.device_model_id == device_model_id,
+            SourceDocument.is_deleted.is_(False),
+            or_(*matches),
+        )
+        .order_by(score.desc(), DocumentChunk.id)
+        .limit(max(1, min(limit, 50)))
+    )
+    rows = (await session.execute(statement)).all()
+    return [
+        DocumentSearchResult(
+            chunk_id=chunk.id,
+            source_document_id=chunk.source_document_id,
+            stable_ref=chunk.stable_ref,
+            page_number=chunk.page_number,
+            content=chunk.content,
+            similarity=float(row_score) / len(terms),
+        )
+        for chunk, row_score in rows
     ]

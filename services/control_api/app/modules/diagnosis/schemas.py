@@ -37,6 +37,7 @@ class DiagnosisRunOut(BaseModel):
     current_step_count: int
     final_report: dict[str, Any]
     usage_metadata: dict[str, Any]
+    working_memory: dict[str, Any]
     error_code: str | None
     error_detail: dict[str, Any]
     started_at: datetime | None

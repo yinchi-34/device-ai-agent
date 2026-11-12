@@ -23,7 +23,7 @@ class ProcessCrash(BaseException):
 class CrashAfterContextProvider:
     calls: int = 0
 
-    async def decide(self, *, diagnosis, steps, tools):
+    async def decide(self, *, diagnosis, steps, tools, memory=None):
         self.calls += 1
         if self.calls == 1:
             return AgentDecision(tool_name="get_device_context", arguments={})
@@ -31,7 +31,7 @@ class CrashAfterContextProvider:
 
 
 class MustNotRunProvider:
-    async def decide(self, *, diagnosis, steps, tools):
+    async def decide(self, *, diagnosis, steps, tools, memory=None):
         raise AssertionError("locked diagnosis must not execute")
 
 
