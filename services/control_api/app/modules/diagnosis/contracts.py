@@ -82,4 +82,4 @@ class DiagnosisToolbox(Protocol):
         raise NotImplementedError
 
 
-StepCallback = Callable[[DiagnosisStep], Awaitable[None]]
+StepCallback = Callable[[DiagnosisStep, WorkingMemory], Awaitable[None]]

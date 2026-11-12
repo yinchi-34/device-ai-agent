@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "prompt_sha256": "0e70928ef504bb6c842887f1ec08bfb5f9d81e5b1d507f34f2ac7f11c11cceb8",
+  "prompt_sha256": "8bc821f14935965a49fd06727ecb1bcfe50adbb5087d58a6952aa3115ed5314e",
   "cases": [
     {
       "id": "transport_connection_refused",

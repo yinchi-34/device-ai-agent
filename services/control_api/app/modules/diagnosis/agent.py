@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 from jsonschema import Draft202012Validator
 
@@ -10,8 +10,10 @@ from app.modules.diagnosis.contracts import (
     DiagnosisToolbox,
     StepCallback,
     ToolDefinition,
+    WorkingMemory,
 )
 from app.modules.diagnosis.grounding import check_grounding
+from app.modules.diagnosis.memory import advance_memory, build_memory
 
 _FINISH_TOOL = ToolDefinition(
     name="finish_diagnosis",
@@ -116,11 +118,23 @@ class DiagnosisAgent:
         *,
         existing_steps: Sequence[DiagnosisStep] = (),
         on_step: StepCallback | None = None,
+        initial_memory: WorkingMemory | None = None,
     ) -> DiagnosisOutcome:
         if not 1 <= diagnosis.max_steps <= 20:
             raise ValueError("max_steps must be between 1 and 20")
 
         steps = list(existing_steps)
+        memory = initial_memory
+        if memory is None or memory.as_of_step != len(steps):
+            # A stale or missing snapshot is never trusted; rebuild from the trail.
+            memory = build_memory(steps)
+
+        async def append(step: DiagnosisStep) -> None:
+            nonlocal memory
+            steps.append(step)
+            memory = advance_memory(memory, step)
+            if on_step is not None:
+                await on_step(step, memory)
         tool_definitions = list(self.toolbox.definitions())
         executable_names = {tool.name for tool in tool_definitions}
         model_tools = [*tool_definitions, _FINISH_TOOL, _ESCALATE_TOOL]
@@ -130,6 +144,7 @@ class DiagnosisAgent:
                 diagnosis=diagnosis,
                 steps=steps,
                 tools=model_tools,
+                memory=memory,
             )
             sequence_number = len(steps) + 1
 
@@ -145,7 +160,7 @@ class DiagnosisAgent:
                         decision.rationale,
                         decision.usage,
                         "terminal_arguments_invalid",
-                        on_step,
+                        append,
                     )
                 if not _valid_evidence_references(
                     decision.arguments, completed_step_count=len(steps)
@@ -158,7 +173,7 @@ class DiagnosisAgent:
                         decision.rationale,
                         decision.usage,
                         "invalid_evidence_reference",
-                        on_step,
+                        append,
                     )
                 grounding = check_grounding(
                     decision.arguments,
@@ -175,7 +190,7 @@ class DiagnosisAgent:
                         decision.rationale,
                         decision.usage,
                         "evidence_grounding_failed",
-                        on_step,
+                        append,
                         violations=grounding.violations,
                         evidence_step_numbers=decision.arguments[
                             "evidence_step_numbers"
@@ -189,7 +204,7 @@ class DiagnosisAgent:
                     result={"status": "completed"},
                     usage=decision.usage,
                 )
-                await _append_step(steps, step, on_step)
+                await append(step)
                 report = {
                     **decision.arguments,
                     "grounding": {
@@ -211,7 +226,7 @@ class DiagnosisAgent:
                         decision.rationale,
                         decision.usage,
                         "terminal_arguments_invalid",
-                        on_step,
+                        append,
                     )
                 if not _valid_evidence_references(
                     decision.arguments, completed_step_count=len(steps)
@@ -224,7 +239,7 @@ class DiagnosisAgent:
                         decision.rationale,
                         decision.usage,
                         "invalid_evidence_reference",
-                        on_step,
+                        append,
                     )
                 step = DiagnosisStep(
                     sequence_number=sequence_number,
@@ -234,7 +249,7 @@ class DiagnosisAgent:
                     result={"status": "escalated"},
                     usage=decision.usage,
                 )
-                await _append_step(steps, step, on_step)
+                await append(step)
                 return DiagnosisOutcome("escalated", decision.arguments, steps)
 
             if decision.tool_name not in executable_names:
@@ -246,7 +261,7 @@ class DiagnosisAgent:
                     decision.rationale,
                     decision.usage,
                     "tool_not_allowed",
-                    on_step,
+                    append,
                 )
 
             result = await self.toolbox.execute(
@@ -260,7 +275,7 @@ class DiagnosisAgent:
                 result=result,
                 usage=decision.usage,
             )
-            await _append_step(steps, step, on_step)
+            await append(step)
 
         return DiagnosisOutcome(
             status="escalated",
@@ -281,7 +296,7 @@ class DiagnosisAgent:
         rationale: str,
         usage: dict,
         reason: str,
-        on_step: StepCallback | None,
+        append: Callable[[DiagnosisStep], Awaitable[None]],
         *,
         violations: list[dict] | None = None,
         evidence_step_numbers: list[int] | None = None,
@@ -297,7 +312,7 @@ class DiagnosisAgent:
             result=result,
             usage=usage,
         )
-        await _append_step(steps, step, on_step)
+        await append(step)
         report = {
             "reason": reason,
             "required_action": "Human review is required.",
@@ -318,13 +333,3 @@ def _valid_evidence_references(arguments: dict, *, completed_step_count: int) ->
         and 1 <= value <= completed_step_count
         for value in references
     )
-
-
-async def _append_step(
-    steps: list[DiagnosisStep],
-    step: DiagnosisStep,
-    on_step: StepCallback | None,
-) -> None:
-    steps.append(step)
-    if on_step is not None:
-        await on_step(step)

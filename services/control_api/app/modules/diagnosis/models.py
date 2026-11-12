@@ -43,6 +43,11 @@ class DiagnosisRun(IdentityMixin, TimestampMixin, Base):
     usage_metadata: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    # Structured working memory snapshot ({"as_of_step", "state"}), updated with
+    # every persisted step and reused on resume when it matches the trail.
+    working_memory: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_detail: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"

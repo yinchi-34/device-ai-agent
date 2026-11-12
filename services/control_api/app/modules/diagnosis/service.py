@@ -8,9 +8,10 @@ from app.core.errors import DomainError
 from app.modules.device.enums import ProfileStatus
 from app.modules.diagnosis import repository
 from app.modules.diagnosis.agent import DiagnosisAgent
-from app.modules.diagnosis.contracts import DiagnosisInput
+from app.modules.diagnosis.contracts import DiagnosisInput, WorkingMemory
 from app.modules.diagnosis.contracts import DiagnosisStep as AuditStep
 from app.modules.diagnosis.gateway import ReadOnlyRegisterGateway
+from app.modules.diagnosis.memory import memory_to_json, resume_memory
 from app.modules.diagnosis.models import DiagnosisRun, DiagnosisStep
 from app.modules.diagnosis.resilience import ModelProviderError
 from app.modules.diagnosis.tools import RuntimeDiagnosisToolbox
@@ -164,7 +165,9 @@ class DiagnosisService:
             embedding_provider=embedding_provider,
         )
 
-        async def persist_step(step: AuditStep) -> None:
+        memory, _ = resume_memory(run.working_memory, existing_steps)
+
+        async def persist_step(step: AuditStep, memory: WorkingMemory) -> None:
             self.session.add(
                 DiagnosisStep(
                     diagnosis_run_id=run.id,
@@ -177,6 +180,7 @@ class DiagnosisService:
                 )
             )
             run.current_step_count = step.sequence_number
+            run.working_memory = memory_to_json(memory)
             await self.session.commit()
 
         try:
@@ -189,6 +193,7 @@ class DiagnosisService:
                 ),
                 existing_steps=existing_steps,
                 on_step=persist_step,
+                initial_memory=memory,
             )
         except ModelProviderError as exc:
             # Retries and fallbacks were already exhausted below the agent loop.
