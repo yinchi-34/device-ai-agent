@@ -13,7 +13,7 @@ class ScriptedProvider:
     def __init__(self, decisions):
         self.decisions = list(decisions)
 
-    async def decide(self, *, diagnosis, steps, tools):
+    async def decide(self, *, diagnosis, steps, tools, memory=None):
         return self.decisions.pop(0)
 
 

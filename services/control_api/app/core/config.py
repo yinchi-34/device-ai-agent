@@ -49,5 +49,21 @@ class Settings(BaseSettings):
     diagnosis_read_gateway_url: str = ""
     diagnosis_read_gateway_token: str = ""
     diagnosis_read_gateway_timeout_seconds: float = 10
+    # Runtime reliability: retries happen below the model and cost no agent steps.
+    diagnosis_llm_max_attempts: int = 3
+    diagnosis_llm_retry_base_seconds: float = 0.5
+    diagnosis_llm_retry_max_seconds: float = 8
+    diagnosis_llm_circuit_failure_threshold: int = 5
+    diagnosis_llm_circuit_cooldown_seconds: float = 60
+    # Optional degraded route used when the primary model is unavailable.
+    diagnosis_llm_fallback_base_url: str = ""
+    diagnosis_llm_fallback_api_key: str = ""
+    diagnosis_llm_fallback_model: str = ""
+    diagnosis_read_gateway_max_attempts: int = 2
+    diagnosis_read_gateway_circuit_failure_threshold: int = 5
+    diagnosis_read_gateway_circuit_cooldown_seconds: float = 30
+    # Context management: compact older audit steps past this estimated budget.
+    diagnosis_context_token_budget: int = 6000
+    diagnosis_context_recent_steps: int = 4
 
     model_config = SettingsConfigDict(env_prefix="DEVICE_", extra="ignore")

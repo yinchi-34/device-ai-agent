@@ -37,6 +37,20 @@ class DiagnosisStep:
 
 
 @dataclass(frozen=True)
+class WorkingMemory:
+    """Structured diagnosis state derived from the audit trail.
+
+    ``state`` is what the model needs to keep reasoning after old steps are
+    compacted: ruled-out causes, points read, evidence in hand, open suspicions.
+    ``as_of_step`` is the last audit step folded into it, so a persisted snapshot
+    can be checked against the trail before it is trusted on resume.
+    """
+
+    state: dict[str, Any]
+    as_of_step: int
+
+
+@dataclass(frozen=True)
 class DiagnosisOutcome:
     status: str
     report: dict[str, Any]
@@ -50,6 +64,7 @@ class DiagnosisModelProvider(Protocol):
         diagnosis: DiagnosisInput,
         steps: Sequence[DiagnosisStep],
         tools: Sequence[ToolDefinition],
+        memory: WorkingMemory | None = None,
     ) -> AgentDecision:
         raise NotImplementedError
 

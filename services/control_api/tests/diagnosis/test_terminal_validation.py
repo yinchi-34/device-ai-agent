@@ -8,7 +8,7 @@ from app.modules.diagnosis.contracts import AgentDecision, DiagnosisInput
 class OneDecisionProvider:
     decision: AgentDecision
 
-    async def decide(self, *, diagnosis, steps, tools):
+    async def decide(self, *, diagnosis, steps, tools, memory=None):
         return self.decision
 
 

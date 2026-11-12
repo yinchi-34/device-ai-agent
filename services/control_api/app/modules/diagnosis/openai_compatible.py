@@ -9,7 +9,9 @@ from app.modules.diagnosis.contracts import (
     DiagnosisInput,
     DiagnosisStep,
     ToolDefinition,
+    WorkingMemory,
 )
+from app.modules.diagnosis.resilience import ModelProviderError
 
 _SYSTEM_PROMPT = """
 You are a read-only industrial device diagnosis agent. Select exactly one supplied
@@ -39,12 +41,16 @@ class OpenAICompatibleDiagnosisProvider:
         model: str,
         timeout_seconds: float = 120,
         transport: httpx.AsyncBaseTransport | None = None,
+        context_token_budget: int = 6000,
+        context_recent_steps: int = 4,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.transport = transport
+        self.context_token_budget = context_token_budget
+        self.context_recent_steps = context_recent_steps
 
     async def decide(
         self,
@@ -52,6 +58,7 @@ class OpenAICompatibleDiagnosisProvider:
         diagnosis: DiagnosisInput,
         steps: Sequence[DiagnosisStep],
         tools: Sequence[ToolDefinition],
+        memory: WorkingMemory | None = None,
     ) -> AgentDecision:
         payload = {
             "model": self.model,
@@ -101,7 +108,29 @@ class OpenAICompatibleDiagnosisProvider:
                 transport=self.transport,
             ) as client:
                 response = await client.post("/chat/completions", json=payload)
-            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise ModelProviderError("model_timeout", retryable=True) from exc
+        except httpx.TransportError as exc:
+            raise ModelProviderError("model_connection_error", retryable=True) from exc
+        if response.status_code == 429:
+            raise ModelProviderError(
+                "model_rate_limited",
+                retryable=True,
+                retry_after_seconds=_retry_after_seconds(response),
+            )
+        if response.status_code >= 500:
+            raise ModelProviderError(
+                "model_server_error",
+                retryable=True,
+                detail={"status_code": response.status_code},
+            )
+        if response.is_error:
+            raise ModelProviderError(
+                "model_request_rejected",
+                retryable=False,
+                detail={"status_code": response.status_code},
+            )
+        try:
             body = response.json()
             message = body["choices"][0]["message"]
             tool_calls = message["tool_calls"]
@@ -118,12 +147,17 @@ class OpenAICompatibleDiagnosisProvider:
                 rationale=message.get("content") or "",
                 usage=usage if isinstance(usage, dict) else {},
             )
-        except (
-            httpx.HTTPError,
-            KeyError,
-            IndexError,
-            TypeError,
-            ValueError,
-            json.JSONDecodeError,
-        ) as exc:
-            raise RuntimeError("diagnosis_model_provider_error") from exc
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            # A malformed sample is model nondeterminism: a fresh sample may be fine.
+            raise ModelProviderError("model_malformed_response", retryable=True) from exc
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    value = response.headers.get("retry-after")
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        return None
+    return seconds if seconds >= 0 else None

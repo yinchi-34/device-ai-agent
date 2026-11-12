@@ -10,8 +10,12 @@ from app.modules.diagnosis.contracts import DiagnosisStep, ToolDefinition
 from app.modules.diagnosis.decoding import DecodeError, decode_register_words
 from app.modules.diagnosis.gateway import ReadOnlyRegisterGateway, ReadPointRequest
 from app.modules.diagnosis.models import DiagnosisRun
+from app.modules.diagnosis.resilience import is_transient_read_result
 from app.modules.document.providers import EmbeddingProvider, ProviderError
-from app.modules.document.retrieval import search_document_chunks
+from app.modules.document.retrieval import (
+    keyword_search_document_chunks,
+    search_document_chunks,
+)
 from app.modules.testing import repository as testing_repository
 
 _DEFINITIONS = [
@@ -185,24 +189,36 @@ class RuntimeDiagnosisToolbox:
 
     async def _search_manual(self, arguments, steps):
         del steps
-        if self.embedding_provider is None:
-            return {
-                "status": "tool_unavailable",
-                "error_code": "embedding_provider_not_configured",
-            }
         instance = await self._instance()
-        try:
-            results = await search_document_chunks(
+        limit = arguments.get("limit", 5)
+        retrieval_mode = "vector"
+        degraded_reason = None
+        results = None
+        if self.embedding_provider is not None:
+            try:
+                results = await search_document_chunks(
+                    self.session,
+                    query=arguments["query"],
+                    source_document_id=None,
+                    device_model_id=instance.device_model_id,
+                    provider=self.embedding_provider,
+                    limit=limit,
+                )
+            except ProviderError as exc:
+                degraded_reason = exc.code
+        else:
+            degraded_reason = "embedding_provider_not_configured"
+        if results is None:
+            # Degrade to keyword retrieval rather than losing manual evidence.
+            retrieval_mode = "keyword"
+            results = await keyword_search_document_chunks(
                 self.session,
                 query=arguments["query"],
-                source_document_id=None,
                 device_model_id=instance.device_model_id,
-                provider=self.embedding_provider,
-                limit=arguments.get("limit", 5),
+                limit=limit,
             )
-        except ProviderError as exc:
-            return {"status": "provider_error", "error_code": exc.code}
-        return {
+        payload: dict[str, Any] = {
+            "retrieval_mode": retrieval_mode,
             "untrusted_manual_evidence": [
                 {
                     "stable_ref": result.stable_ref,
@@ -211,8 +227,11 @@ class RuntimeDiagnosisToolbox:
                     "similarity": result.similarity,
                 }
                 for result in results
-            ]
+            ],
         }
+        if degraded_reason is not None:
+            payload["degraded_reason"] = degraded_reason
+        return payload
 
     async def _read_point(self, arguments, steps):
         retry_error = repeated_read_policy_error(arguments, steps)
@@ -289,9 +308,25 @@ class RuntimeDiagnosisToolbox:
         return {"status": "success", "point_code": point.code, **result}
 
 
+_MODEL_RETRY_LIMIT = 3
+_DETERMINISTIC_READ_STATUSES = {
+    "connection_refused",
+    "modbus_exception",
+    "success",
+    "tool_unavailable",
+}
+
+
 def repeated_read_policy_error(
     arguments: dict[str, Any], steps: Sequence[DiagnosisStep]
 ) -> dict[str, Any] | None:
+    """Model-level guard against repeating an identical read.
+
+    Transient faults are already retried by the runtime gateway, so a repeat
+    here costs a whole agent step; it is allowed a bounded number of times.
+    Deterministic answers (including a non-transient gateway error, or an open
+    gateway breaker) will not change on repeat and are blocked outright.
+    """
     matching = [
         step
         for step in steps
@@ -301,11 +336,11 @@ def repeated_read_policy_error(
         return None
     last = matching[-1]
     status = last.result.get("status")
-    if status == "timeout" and len(matching) < 3:
-        return None
-    if status == "timeout":
+    if is_transient_read_result(last.result):
+        if len(matching) < _MODEL_RETRY_LIMIT:
+            return None
         error_code = "read_retry_limit_reached"
-    elif status in {"connection_refused", "modbus_exception", "success"}:
+    elif status in _DETERMINISTIC_READ_STATUSES or status == "gateway_error":
         error_code = "deterministic_read_result"
     else:
         return None
@@ -358,7 +393,13 @@ def _normalize_read_result(
                 "error_code": "gateway_invalid_raw_words",
             }
         normalized["raw_words"] = words
-    for key in ("error_code", "exception_code", "exception_name", "latency_ms"):
+    for key in (
+        "error_code",
+        "exception_code",
+        "exception_name",
+        "latency_ms",
+        "gateway_attempts",
+    ):
         value = result.get(key)
         if isinstance(value, (str, int, float)) and not isinstance(value, bool):
             normalized[key] = value
