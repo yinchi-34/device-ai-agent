@@ -83,7 +83,9 @@ def extract_document(run_id: int) -> None:
         )
         raise
     except Exception as exc:
-        task_logger.exception(
+        # Type only: some exception messages (e.g. validation errors on model
+        # output) can contain document text, which must not reach the logs.
+        task_logger.warning(
             "extraction_task_failed",
             extra={**fields, "error_type": type(exc).__name__},
         )
