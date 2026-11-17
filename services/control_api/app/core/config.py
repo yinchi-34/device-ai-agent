@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     document_storage_root: Path = Path("var/documents")
     document_max_file_bytes: int = 25 * 1024 * 1024
     document_max_pdf_pages: int = 300
+    # A DOCX is a zip archive; these cap what an upload may expand to.
+    document_max_docx_uncompressed_bytes: int = 200 * 1024 * 1024
+    document_max_docx_entries: int = 2000
     document_min_text_chars_per_page: int = 40
     document_task_visibility_timeout_seconds: int = 6 * 60 * 60
 

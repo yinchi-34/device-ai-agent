@@ -7,6 +7,8 @@ from typing import BinaryIO, Protocol
 from uuid import uuid4
 
 from app.modules.document.file_validation import (
+    DEFAULT_MAX_DOCX_ENTRIES,
+    DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES,
     DocumentValidationError,
     ValidatedDocument,
     validate_stored_document,
@@ -142,6 +144,8 @@ async def validate_and_promote(
     chunks: AsyncIterable[bytes] | Iterable[bytes],
     max_file_bytes: int,
     max_pdf_pages: int,
+    max_docx_uncompressed_bytes: int = DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES,
+    max_docx_entries: int = DEFAULT_MAX_DOCX_ENTRIES,
 ) -> tuple[StoredDocument, ValidatedDocument]:
     stored = await storage.save_quarantine(
         original_file_name, chunks, max_bytes=max_file_bytes
@@ -153,6 +157,8 @@ async def validate_and_promote(
             declared_media_type,
             max_file_bytes=max_file_bytes,
             max_pdf_pages=max_pdf_pages,
+            max_docx_uncompressed_bytes=max_docx_uncompressed_bytes,
+            max_docx_entries=max_docx_entries,
         )
         promoted = storage.promote(stored, validated.file_hash_sha256)
         return promoted, validated

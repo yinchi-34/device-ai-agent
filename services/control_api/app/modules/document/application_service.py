@@ -48,6 +48,10 @@ class DocumentApplicationService:
             chunks=chunks,
             max_file_bytes=self.settings.document_max_file_bytes,
             max_pdf_pages=self.settings.document_max_pdf_pages,
+            max_docx_uncompressed_bytes=(
+                self.settings.document_max_docx_uncompressed_bytes
+            ),
+            max_docx_entries=self.settings.document_max_docx_entries,
         )
         document = SourceDocument(
             device_model_id=device_model_id,
@@ -135,7 +139,11 @@ class DocumentApplicationService:
 
 
 def map_validation_error(exc: DocumentValidationError) -> DomainError:
-    if exc.code in {"document_too_large", "document_pdf_too_many_pages"}:
+    if exc.code in {
+        "document_too_large",
+        "document_pdf_too_many_pages",
+        "document_docx_too_large",
+    }:
         status_code = 413
     elif exc.code == "document_type_not_allowed":
         status_code = 415

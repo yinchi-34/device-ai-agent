@@ -14,6 +14,8 @@ def test_document_settings_have_safe_defaults():
     assert settings.document_llm_timeout_seconds == 600
     assert settings.document_llm_max_output_tokens == 8192
     assert settings.document_extraction_group_max_tokens == 2000
+    assert settings.document_max_docx_uncompressed_bytes == 200 * 1024 * 1024
+    assert settings.document_max_docx_entries == 2000
 
 
 def test_provider_credentials_are_independent(monkeypatch):
