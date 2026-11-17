@@ -19,4 +19,11 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
+    # Needs a `celery beat` process; see document-beat in docker-compose.yml.
+    beat_schedule={
+        "reap-stale-extraction-runs": {
+            "task": "document.reap_stale_runs",
+            "schedule": 600,
+        },
+    },
 )

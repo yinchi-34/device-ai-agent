@@ -34,8 +34,9 @@
     ├── oauth2-proxy ── 对接身份提供方
     └── control-api ── 再次校验 JWT，写审计记录
           ├── db（PostgreSQL + pgvector，卷 db-data）
-          ├── redis
-          └── document-worker（卷 document-files）
+          ├── redis（卷 redis-data，开启 AOF 持久化）
+          ├── document-worker（卷 document-files）
+          └── document-beat ── 每 10 分钟把卡住的抽取任务标记为失败，只能运行一个
 ```
 
 服务器的内网地址上只有网关在监听。API、数据库、Redis 和 oauth2-proxy 都只能在
@@ -209,7 +210,7 @@ chmod 700 backup.sh
 恢复（先停掉会写数据的服务）：
 
 ```bash
-docker compose stop control-api document-worker gateway
+docker compose stop control-api document-worker document-beat gateway
 docker compose exec -T db pg_restore -U device -d device_ai_agent --clean --if-exists \
   < backups/db-<stamp>.dump
 docker compose run --rm --no-deps -T control-api sh -c 'tar xzf - -C /data/documents' \
@@ -222,7 +223,7 @@ docker compose up -d
 ## 日志与监控
 
 ```bash
-docker compose logs -f gateway control-api document-worker
+docker compose logs -f gateway control-api document-worker document-beat
 docker compose logs --since 1h oauth2-proxy      # 排查登录问题
 ```
 

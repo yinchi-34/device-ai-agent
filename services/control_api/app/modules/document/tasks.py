@@ -3,7 +3,10 @@ import asyncio
 from app.core.config import Settings
 from app.db.session import async_session_factory
 from app.modules.document.celery_app import celery_app
-from app.modules.document.extraction import execute_extraction_run
+from app.modules.document.extraction import (
+    execute_extraction_run,
+    reap_stale_extraction_runs,
+)
 from app.modules.document.openai_compatible import (
     OpenAICompatibleEmbeddingProvider,
     OpenAICompatibleExtractionProvider,
@@ -64,3 +67,19 @@ async def _execute(run_id: int) -> None:
 )
 def extract_document(run_id: int) -> None:
     asyncio.run(_execute(run_id))
+
+
+async def _reap() -> list[int]:
+    settings = Settings()
+    async with async_session_factory() as session:
+        return await reap_stale_extraction_runs(
+            session,
+            stale_queued_seconds=settings.document_stale_queued_seconds,
+            stale_running_seconds=settings.document_stale_running_seconds,
+        )
+
+
+@celery_app.task(name="document.reap_stale_runs")
+def reap_stale_runs() -> list[int]:
+    """Run by celery beat; see reap_stale_extraction_runs."""
+    return asyncio.run(_reap())

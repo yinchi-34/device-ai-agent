@@ -28,9 +28,12 @@ def create_app() -> FastAPI:
     async def domain_error_handler(
         request: Request, exc: DomainError
     ) -> JSONResponse:
+        content: dict[str, object] = {"code": exc.code, "message": exc.message}
+        if exc.details:
+            content["details"] = exc.details
         return JSONResponse(
             status_code=exc.status_code,
-            content={"code": exc.code, "message": exc.message},
+            content=content,
             headers=exc.headers,
         )
 

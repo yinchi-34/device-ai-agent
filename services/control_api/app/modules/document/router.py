@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
+from kombu.exceptions import OperationalError as KombuOperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import Identity, require_identity
@@ -30,6 +31,26 @@ async def iter_upload_file(file: UploadFile) -> AsyncIterator[bytes]:
 
 def dispatch_extraction_task(run_id: int) -> None:
     extract_document.delay(run_id)
+
+
+async def _dispatch_or_fail(session: AsyncSession, run_id: int) -> None:
+    """Hand the run to the worker queue, or fail it if the broker is unreachable.
+
+    The run is committed before dispatch so the worker can always find it. If the
+    dispatch then fails, the run would otherwise stay "queued" forever and could
+    not be retried, so it is marked failed and the caller gets a 503 with its id.
+    """
+    try:
+        dispatch_extraction_task(run_id)
+    except (KombuOperationalError, OSError) as exc:
+        await DocumentApplicationService(session).mark_dispatch_failed(run_id, exc)
+        await session.commit()
+        raise DomainError(
+            "extraction_queue_unavailable",
+            "The extraction queue is unavailable; retry the run later",
+            503,
+            details={"run_id": run_id},
+        ) from None
 
 
 def build_embedding_provider() -> OpenAICompatibleEmbeddingProvider:
@@ -78,7 +99,7 @@ async def queue_extraction(
 ) -> object:
     run = await DocumentApplicationService(session).queue_extraction(document_id)
     await session.commit()
-    dispatch_extraction_task(run.id)
+    await _dispatch_or_fail(session, run.id)
     return run
 
 
@@ -99,7 +120,7 @@ async def retry_extraction(
 ) -> object:
     run = await DocumentApplicationService(session).retry_run(run_id)
     await session.commit()
-    dispatch_extraction_task(run.id)
+    await _dispatch_or_fail(session, run.id)
     return run
 
 

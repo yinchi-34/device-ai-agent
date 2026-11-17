@@ -1,11 +1,11 @@
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from hashlib import sha256
 from pathlib import Path
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select, text
+from sqlalchemy import and_, delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -634,3 +634,89 @@ async def execute_extraction_with_retries(
     if last_error is None:
         raise RuntimeError("Extraction retry loop did not execute")
     raise last_error
+
+
+# States the pipeline passes through while a worker owns the run and its lock.
+_RUNNING_STATUSES = (
+    ExtractionRunStatus.VALIDATING.value,
+    ExtractionRunStatus.PARSING.value,
+    ExtractionRunStatus.EXTRACTING.value,
+    ExtractionRunStatus.VALIDATING_OUTPUT.value,
+)
+
+
+async def reap_stale_extraction_runs(
+    session: AsyncSession,
+    *,
+    stale_queued_seconds: int,
+    stale_running_seconds: int,
+    now: datetime | None = None,
+) -> list[int]:
+    """Mark extraction runs failed when nothing is moving them on.
+
+    A run is stale when it has sat in "queued" past stale_queued_seconds (the
+    broker lost the task), or in a running state past stale_running_seconds with
+    no worker holding its lock (the worker died). Each run is locked before it is
+    changed, so a worker that is still processing it is never interrupted, and a
+    worker that picks it up afterwards sees the lock and skips it. Returns the ids
+    of the runs that were marked failed; the user can retry them.
+    """
+    now = now or datetime.now(UTC)
+    queued_before = now - timedelta(seconds=stale_queued_seconds)
+    running_before = now - timedelta(seconds=stale_running_seconds)
+    status = ProfileExtractionRun.status
+    candidate_ids = (
+        await session.scalars(
+            select(ProfileExtractionRun.id)
+            .where(
+                or_(
+                    and_(
+                        status == ExtractionRunStatus.QUEUED.value,
+                        ProfileExtractionRun.queued_at < queued_before,
+                    ),
+                    and_(
+                        status.in_(_RUNNING_STATUSES),
+                        ProfileExtractionRun.updated_at < running_before,
+                    ),
+                )
+            )
+            .order_by(ProfileExtractionRun.id)
+        )
+    ).all()
+    await session.rollback()
+
+    reaped: list[int] = []
+    for run_id in candidate_ids:
+        lock_connection = await _try_acquire_run_lock(session, run_id)
+        if lock_connection is None:
+            continue
+        try:
+            run = await session.scalar(
+                select(ProfileExtractionRun)
+                .where(ProfileExtractionRun.id == run_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if run is None:
+                continue
+            previous_status = run.status
+            if previous_status == ExtractionRunStatus.QUEUED.value:
+                is_stale = run.queued_at < queued_before
+                error_code = "stale_queued"
+            elif previous_status in _RUNNING_STATUSES:
+                is_stale = run.updated_at < running_before
+                error_code = "stale_running"
+            else:
+                is_stale = False
+            if not is_stale:
+                await session.rollback()
+                continue
+            run.status = ExtractionRunStatus.FAILED.value
+            run.error_code = error_code
+            run.error_detail = {"previous_status": previous_status}
+            run.finished_at = now
+            await session.commit()
+            reaped.append(run_id)
+        finally:
+            await _release_run_lock(lock_connection, run_id)
+    return reaped
