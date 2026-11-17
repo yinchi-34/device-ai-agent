@@ -20,6 +20,14 @@
 		# route keeps the written order, so the IP check runs before any handle.
 		respond @blocked "Forbidden" 403
 
+		# Reject oversized bodies before they reach control-api, which otherwise
+		# spools the whole upload to a temp file before checking its size. Keep this
+		# a little above DEVICE_DOCUMENT_MAX_FILE_BYTES (25 MB by default) to leave
+		# room for the multipart framing.
+		request_body {
+			max_size {$GATEWAY_MAX_REQUEST_BODY:30MB}
+		}
+
 		# Liveness probe for the load balancer; carries no data.
 		handle /health {
 			reverse_proxy control-api:8000

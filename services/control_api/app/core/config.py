@@ -22,8 +22,18 @@ class Settings(BaseSettings):
     document_storage_root: Path = Path("var/documents")
     document_max_file_bytes: int = 25 * 1024 * 1024
     document_max_pdf_pages: int = 300
+    # A DOCX is a zip archive; these cap what an upload may expand to.
+    document_max_docx_uncompressed_bytes: int = 200 * 1024 * 1024
+    document_max_docx_entries: int = 2000
     document_min_text_chars_per_page: int = 40
     document_task_visibility_timeout_seconds: int = 6 * 60 * 60
+    # The reaper marks extraction runs failed when nothing is moving them on.
+    # Queued runs get a long limit because a busy worker may not reach them for a
+    # while; a run that is past this point was almost certainly lost by the broker.
+    document_stale_queued_seconds: int = 6 * 60 * 60
+    # Running runs are only reaped when no worker holds their lock, so this limit
+    # just guards against reaping a run in the moment between two state changes.
+    document_stale_running_seconds: int = 30 * 60
 
     document_llm_base_url: str = "https://api.openai.com/v1"
     document_llm_api_key: str = ""

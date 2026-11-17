@@ -91,3 +91,58 @@ async def test_candidate_patch_returns_refreshed_candidate(client, db_session):
     assert response.status_code == 200
     assert response.json()["revision"] == 2
     assert response.json()["updated_at"]
+
+
+def _fail_dispatch(_run_id):
+    raise ConnectionError("broker unavailable")
+
+
+async def test_queue_marks_run_failed_when_broker_is_unavailable(
+    client, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEVICE_DOCUMENT_STORAGE_ROOT", str(tmp_path))
+    uploaded = await client.post(
+        "/api/v1/documents",
+        files={"file": ("manual.pdf", valid_pdf_bytes(), "application/pdf")},
+    )
+    document_id = uploaded.json()["id"]
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", _fail_dispatch)
+
+    queued = await client.post(f"/api/v1/documents/{document_id}/extraction-runs")
+
+    assert queued.status_code == 503
+    assert queued.json()["code"] == "extraction_queue_unavailable"
+    run_id = queued.json()["details"]["run_id"]
+    fetched = await client.get(f"/api/v1/extraction-runs/{run_id}")
+    assert fetched.json()["status"] == "failed"
+    assert fetched.json()["error_code"] == "queue_dispatch_failed"
+
+    dispatched = []
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", dispatched.append)
+    retried = await client.post(f"/api/v1/extraction-runs/{run_id}/retry")
+
+    assert retried.status_code == 202
+    assert dispatched == [retried.json()["id"]]
+
+
+async def test_retry_marks_new_run_failed_when_broker_is_unavailable(
+    client, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEVICE_DOCUMENT_STORAGE_ROOT", str(tmp_path))
+    uploaded = await client.post(
+        "/api/v1/documents",
+        files={"file": ("manual.pdf", valid_pdf_bytes(), "application/pdf")},
+    )
+    monkeypatch.setattr(document_router, "dispatch_extraction_task", _fail_dispatch)
+    first = await client.post(
+        f"/api/v1/documents/{uploaded.json()['id']}/extraction-runs"
+    )
+    first_run_id = first.json()["details"]["run_id"]
+
+    retried = await client.post(f"/api/v1/extraction-runs/{first_run_id}/retry")
+
+    assert retried.status_code == 503
+    second_run_id = retried.json()["details"]["run_id"]
+    assert second_run_id != first_run_id
+    fetched = await client.get(f"/api/v1/extraction-runs/{second_run_id}")
+    assert fetched.json()["status"] == "failed"

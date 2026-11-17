@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterable, Iterable
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.modules.device.models import DeviceModel
+from app.modules.document.enums import ExtractionRunStatus
 from app.modules.document.file_validation import DocumentValidationError
 from app.modules.document.models import (
     ProfileExtractionCandidate,
@@ -48,6 +50,10 @@ class DocumentApplicationService:
             chunks=chunks,
             max_file_bytes=self.settings.document_max_file_bytes,
             max_pdf_pages=self.settings.document_max_pdf_pages,
+            max_docx_uncompressed_bytes=(
+                self.settings.document_max_docx_uncompressed_bytes
+            ),
+            max_docx_entries=self.settings.document_max_docx_entries,
         )
         document = SourceDocument(
             device_model_id=device_model_id,
@@ -83,6 +89,18 @@ class DocumentApplicationService:
             embedding_provider="openai_compatible",
             embedding_model=self.settings.document_embedding_model,
         )
+
+    async def mark_dispatch_failed(
+        self, run_id: int, error: BaseException
+    ) -> ProfileExtractionRun:
+        """Fail a run whose task never reached the broker, so it can be retried."""
+        run = await self.get_run(run_id)
+        run.status = ExtractionRunStatus.FAILED.value
+        run.error_code = "queue_dispatch_failed"
+        run.error_detail = {"error_type": type(error).__name__}
+        run.finished_at = datetime.now(UTC)
+        await self.session.flush()
+        return run
 
     async def get_run(self, run_id: int) -> ProfileExtractionRun:
         run = await self.session.get(ProfileExtractionRun, run_id)
@@ -135,7 +153,11 @@ class DocumentApplicationService:
 
 
 def map_validation_error(exc: DocumentValidationError) -> DomainError:
-    if exc.code in {"document_too_large", "document_pdf_too_many_pages"}:
+    if exc.code in {
+        "document_too_large",
+        "document_pdf_too_many_pages",
+        "document_docx_too_large",
+    }:
         status_code = 413
     elif exc.code == "document_type_not_allowed":
         status_code = 415

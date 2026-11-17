@@ -1,3 +1,4 @@
+import logging
 from copy import deepcopy
 from hashlib import sha256
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -480,3 +481,124 @@ async def test_grouped_agent_resumes_successful_recursive_parts(db_session, tmp_
     assert len(run.raw_agent_response["fragments"]) == 1
     assert result.usage["total_tokens"] == 10
     assert "in_progress_fragment" not in run.raw_agent_response
+
+
+async def test_pipeline_logs_each_state_change(db_session, tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="app.extraction")
+    run, extraction, embedding = await pipeline_setup(db_session, tmp_path)
+
+    await execute_extraction_run(
+        db_session,
+        run.id,
+        storage=FileSystemDocumentStorage(tmp_path),
+        extraction_provider=extraction,
+        vision_provider=FakeVisionOcrProvider([]),
+        embedding_provider=embedding,
+    )
+
+    transitions = [
+        (r.from_status, r.to_status)
+        for r in caplog.records
+        if r.getMessage() == "extraction_run_transition"
+    ]
+    assert transitions == [
+        ("queued", "validating"),
+        ("validating", "parsing"),
+        ("parsing", "extracting"),
+        ("extracting", "validating_output"),
+        ("validating_output", "awaiting_review"),
+    ]
+    assert all(
+        r.run_id == run.id and r.stage_ms >= 0
+        for r in caplog.records
+        if r.getMessage() == "extraction_run_transition"
+    )
+
+
+async def test_pipeline_logs_failure_with_error_code(db_session, tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="app.extraction")
+    run, _, embedding = await pipeline_setup(db_session, tmp_path)
+
+    class RateLimited:
+        async def extract(self, chunks, context):
+            raise ProviderError("provider_rate_limited", retryable=True, status_code=429)
+
+    with pytest.raises(ProviderError):
+        await execute_extraction_run(
+            db_session,
+            run.id,
+            storage=FileSystemDocumentStorage(tmp_path),
+            extraction_provider=RateLimited(),
+            vision_provider=FakeVisionOcrProvider([]),
+            embedding_provider=embedding,
+        )
+
+    [failed] = [r for r in caplog.records if r.getMessage() == "extraction_run_failed"]
+    assert failed.run_id == run.id
+    assert failed.error_code == "provider_rate_limited"
+    assert failed.retryable is True
+    assert failed.failed_in == "extracting"
+
+
+async def test_pipeline_records_ocr_usage(db_session, tmp_path):
+    from pypdf import PdfWriter
+
+    from app.modules.document.providers import VisionBlock
+
+    path = tmp_path / "original" / "scan.pdf"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    with path.open("wb") as stream:
+        writer.write(stream)
+    content = path.read_bytes()
+    document = SourceDocument(
+        original_file_name="scan.pdf",
+        media_type="application/pdf",
+        file_size_bytes=len(content),
+        file_hash_sha256=sha256(content).hexdigest(),
+        storage_uri="original/scan.pdf",
+        validation_status="validated",
+    )
+    db_session.add_all([document, BasicCapability(code="run_status", name="Run status")])
+    await db_session.flush()
+    run = await create_extraction_run(
+        db_session,
+        document.id,
+        extraction_provider="fake",
+        extraction_model="extract-v1",
+        embedding_provider="fake",
+        embedding_model="embed-v1",
+    )
+
+    class CountingVision:
+        def __init__(self):
+            self.usage_totals = {"calls": 0, "total_tokens": 0}
+
+        async def extract_page(self, image_bytes, page_number):
+            self.usage_totals["calls"] += 1
+            self.usage_totals["total_tokens"] += 1520
+            return [VisionBlock(content="Run status 40001")]
+
+    class Renderer:
+        def render_png(self, pdf_path, page_number):
+            return b"png"
+
+    await execute_extraction_run(
+        db_session,
+        run.id,
+        storage=FileSystemDocumentStorage(tmp_path),
+        extraction_provider=FakeExtractionProvider(
+            ExtractionResult(candidate_payload(), {}, {"total_tokens": 900})
+        ),
+        vision_provider=CountingVision(),
+        embedding_provider=FakeEmbeddingProvider(
+            EmbeddingResult([[1.0, 0.0, 0.0]], "fake", "embed-v1", 3, {})
+        ),
+        renderer=Renderer(),
+    )
+
+    await db_session.refresh(run)
+    assert run.parse_metadata["ocr_usage"] == {"calls": 1, "total_tokens": 1520}
+    assert run.usage_metadata["ocr"] == {"calls": 1, "total_tokens": 1520}
+    assert run.usage_metadata["total_tokens"] == 900

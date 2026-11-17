@@ -16,6 +16,9 @@ ALLOWED_MEDIA_TYPES = {".pdf": PDF_MEDIA_TYPE, ".docx": DOCX_MEDIA_TYPE}
 _DOCX_RISK_PATH_PARTS = ("word/embeddings/", "word/activex/")
 _DOCX_RISK_FILE_NAMES = ("vbaproject.bin",)
 _PDF_RISK_KEYS = {"/AA", "/JavaScript", "/EmbeddedFiles"}
+# Defaults match Settings; callers normally pass the configured values.
+DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+DEFAULT_MAX_DOCX_ENTRIES = 2000
 
 
 @dataclass(frozen=True)
@@ -136,13 +139,39 @@ def _validate_pdf(path: Path, max_pdf_pages: int) -> dict[str, Any]:
     return {"page_count": page_count}
 
 
-def _validate_docx(path: Path) -> dict[str, Any]:
+def _docx_too_large() -> DocumentValidationError:
+    return DocumentValidationError(
+        "document_docx_too_large",
+        "The DOCX expands beyond the configured size or entry limit",
+    )
+
+
+def _read_docx_part(archive: ZipFile, name: str, budget: int) -> bytes:
+    """Read one part, never more than budget bytes, whatever its header claims."""
+    with archive.open(name) as part:
+        data = part.read(budget + 1)
+    if len(data) > budget:
+        raise _docx_too_large()
+    return data
+
+
+def _validate_docx(
+    path: Path, *, max_uncompressed_bytes: int, max_entries: int
+) -> dict[str, Any]:
     if not is_zipfile(path):
         raise DocumentValidationError(
             "document_type_mismatch", "The file is not a DOCX document"
         )
     try:
         with ZipFile(path) as archive:
+            # A DOCX is a zip archive. Check what it would expand to before
+            # decompressing anything, so a small upload cannot exhaust memory.
+            infos = archive.infolist()
+            if len(infos) > max_entries:
+                raise _docx_too_large()
+            if sum(info.file_size for info in infos) > max_uncompressed_bytes:
+                raise _docx_too_large()
+            remaining = max_uncompressed_bytes
             names = archive.namelist()
             lowered_names = [name.lower() for name in names]
             required = {"[content_types].xml", "word/document.xml"}
@@ -161,7 +190,9 @@ def _validate_docx(path: Path) -> dict[str, Any]:
                 )
             for name in names:
                 if name.lower().endswith((".xml", ".rels")):
-                    root = ElementTree.fromstring(archive.read(name))
+                    data = _read_docx_part(archive, name, remaining)
+                    remaining -= len(data)
+                    root = ElementTree.fromstring(data)
                     if name.lower().endswith(".rels") and any(
                         element.attrib.get("TargetMode", "").lower() == "external"
                         for element in root.iter()
@@ -180,13 +211,22 @@ def _validate_docx(path: Path) -> dict[str, Any]:
 
 
 def validate_file_content(
-    path: Path, suffix: str, *, max_pdf_pages: int
+    path: Path,
+    suffix: str,
+    *,
+    max_pdf_pages: int,
+    max_docx_uncompressed_bytes: int = DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES,
+    max_docx_entries: int = DEFAULT_MAX_DOCX_ENTRIES,
 ) -> dict[str, Any]:
     normalized_suffix = suffix.lower()
     if normalized_suffix == ".pdf":
         return _validate_pdf(path, max_pdf_pages)
     if normalized_suffix == ".docx":
-        return _validate_docx(path)
+        return _validate_docx(
+            path,
+            max_uncompressed_bytes=max_docx_uncompressed_bytes,
+            max_entries=max_docx_entries,
+        )
     raise DocumentValidationError(
         "document_type_not_allowed", "Only PDF and DOCX files are allowed"
     )
@@ -199,6 +239,8 @@ def validate_stored_document(
     *,
     max_file_bytes: int,
     max_pdf_pages: int,
+    max_docx_uncompressed_bytes: int = DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES,
+    max_docx_entries: int = DEFAULT_MAX_DOCX_ENTRIES,
 ) -> ValidatedDocument:
     size_bytes = path.stat().st_size
     suffix = validate_upload_metadata(
@@ -207,7 +249,13 @@ def validate_stored_document(
         size_bytes,
         max_file_bytes=max_file_bytes,
     )
-    metadata = validate_file_content(path, suffix, max_pdf_pages=max_pdf_pages)
+    metadata = validate_file_content(
+        path,
+        suffix,
+        max_pdf_pages=max_pdf_pages,
+        max_docx_uncompressed_bytes=max_docx_uncompressed_bytes,
+        max_docx_entries=max_docx_entries,
+    )
     return ValidatedDocument(
         suffix=suffix,
         media_type=ALLOWED_MEDIA_TYPES[suffix],
