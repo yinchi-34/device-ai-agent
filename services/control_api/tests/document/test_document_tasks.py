@@ -35,3 +35,51 @@ def test_worker_default_modules_register_extraction_task():
     )
 
     assert result.stdout.strip() == "True"
+
+
+def test_extract_task_logs_start_and_finish(monkeypatch, caplog):
+    import logging
+
+    from app.modules.document import tasks
+
+    async def fake_execute(run_id):
+        return None
+
+    monkeypatch.setattr(tasks, "_execute", fake_execute)
+    caplog.set_level(logging.INFO, logger="app.tasks")
+
+    extract_document.apply(args=[42], task_id="task-1")
+
+    events = [(r.getMessage(), r.run_id, r.task_id) for r in caplog.records]
+    assert ("extraction_task_started", 42, "task-1") in events
+    assert ("extraction_task_finished", 42, "task-1") in events
+
+
+def test_extract_task_logs_transient_errors_before_retrying(monkeypatch, caplog):
+    import logging
+
+    from app.modules.document import tasks
+    from app.modules.document.providers import ProviderError
+
+    async def rate_limited(run_id):
+        raise ProviderError("provider_rate_limited", retryable=True, status_code=429)
+
+    monkeypatch.setattr(tasks, "_execute", rate_limited)
+    caplog.set_level(logging.INFO, logger="app.tasks")
+
+    extract_document.apply(args=[42], task_id="task-2")
+
+    retrying = [r for r in caplog.records if r.getMessage() == "extraction_task_retrying"]
+    assert retrying
+    assert retrying[0].error_code == "provider_rate_limited"
+    assert retrying[0].run_id == 42
+
+
+def test_worker_logging_uses_json():
+    from celery.signals import setup_logging
+
+    from app.modules.document import celery_app as celery_app_module
+
+    # Connecting to setup_logging stops celery from installing its own handlers.
+    assert setup_logging.has_listeners()
+    assert callable(celery_app_module._configure_worker_logging)

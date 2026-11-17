@@ -1,6 +1,8 @@
 from celery import Celery
+from celery.signals import setup_logging
 
 from app.core.config import Settings
+from app.core.logging import configure_logging
 
 settings = Settings()
 
@@ -27,3 +29,12 @@ celery_app.conf.update(
         },
     },
 )
+
+
+@setup_logging.connect
+def _configure_worker_logging(**_kwargs: object) -> None:
+    """Make the worker and beat log JSON like the API.
+
+    Connecting to this signal also stops celery from installing its own handlers.
+    """
+    configure_logging()

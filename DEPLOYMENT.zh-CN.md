@@ -227,9 +227,42 @@ docker compose logs -f gateway control-api document-worker document-beat
 docker compose logs --since 1h oauth2-proxy      # 排查登录问题
 ```
 
-容器日志会自动轮转（每个服务 10 MB × 5 个文件）。最低限度的监控：
+容器日志会自动轮转（每个服务 10 MB × 5 个文件）。
+
+control-api、document-worker 和 document-beat 每行输出一个 JSON 对象，`event` 字段说明发生了什么，
+可以直接用 `jq` 过滤，也可以接入日志平台：
+
+| event | 含义 | 常用字段 |
+| --- | --- | --- |
+| `http_request` | 一次 API 请求 | `method`、`path`、`status_code`、`duration_ms`、`request_id` |
+| `model_call` | 一次模型调用 | `purpose`（extract / ocr / embed）、`model`、`status_code`、`error_code`、`retryable`、`total_tokens`、`duration_ms` |
+| `extraction_run_transition` | 抽取任务换了状态 | `run_id`、`from_status`、`to_status`、`stage_ms`（上一个状态用了多久） |
+| `extraction_run_failed` | 抽取任务失败 | `run_id`、`failed_in`、`error_code` |
+| `extraction_task_retrying` | 遇到可重试错误，Celery 稍后重试 | `run_id`、`error_code` |
+| `readiness_check_failed` | `/ready` 检查到数据库或 Redis 不通 | `check`、`error_type` |
+
+客户端可以在请求头里带 `X-Request-ID`，响应头会原样返回，同一请求的所有日志都带这个编号；
+不带时自动生成。日志里不记录请求体、模型输入输出、手册正文和密钥。
+
+```bash
+# 最近一小时的模型调用错误，按错误码计数
+docker compose logs --since 1h --no-log-prefix document-worker \
+  | jq -r 'select(.event=="model_call" and .outcome=="error") | .error_code' | sort | uniq -c
+```
+
+`/health` 只表示进程活着；`/ready` 还会检查数据库和 Redis，任一不通返回 503。
+`/ready` 不经过网关，只在服务器上用（镜像里没有 curl）：
+
+```bash
+docker compose exec control-api python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/ready').read().decode())"
+```
+
+最低限度的监控：
 
 - 负载均衡健康检查失败时告警；
+- `/ready` 返回 503 时告警；
+- `extraction_run_failed` 一小时内超过 5 条，或出现 `error_code` 为 `stale_queued` / `stale_running` 时告警；
 - 磁盘使用率超过 80% 时告警（上传文件和备份会持续增长）；
 - 每天看一眼 `/var/log/device-backup.log` 或 `backups/` 里最新的文件。
 

@@ -1,3 +1,5 @@
+import logging
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -43,10 +45,52 @@ from app.modules.document.retrieval import embed_run_chunks
 from app.modules.document.schemas import ProfileCandidateFragment
 from app.modules.document.storage import DocumentStorage
 
+extraction_logger = logging.getLogger("app.extraction")
+
+
+def _log_state_change(
+    run: ProfileExtractionRun, from_status: str, to_status: str
+) -> None:
+    """Log a state change with how long the run spent in the previous state."""
+    now = time.perf_counter()
+    started = getattr(run, "_stage_started", None)
+    run._stage_started = now  # type: ignore[attr-defined]  # not a mapped column
+    extraction_logger.info(
+        "extraction_run_transition",
+        extra={
+            "run_id": run.id,
+            "document_id": run.source_document_id,
+            "from_status": from_status,
+            "to_status": to_status,
+            "stage_ms": round((now - started) * 1000, 1) if started else 0.0,
+        },
+    )
+
+
+def _log_failure(
+    run: ProfileExtractionRun, failed_in: str, **details: object
+) -> None:
+    extraction_logger.warning(
+        "extraction_run_failed",
+        extra={
+            "run_id": run.id,
+            "document_id": run.source_document_id,
+            "failed_in": failed_in,
+            "error_code": run.error_code,
+            **details,
+        },
+    )
+
+
+def _vision_usage(vision_provider: VisionOcrProvider) -> dict[str, int]:
+    usage = getattr(vision_provider, "usage_totals", None)
+    return dict(usage) if isinstance(usage, dict) else {}
+
 
 async def _transition(
     session: AsyncSession, run: ProfileExtractionRun, status: ExtractionRunStatus
 ) -> None:
+    from_status = run.status
     run.status = status.value
     if status == ExtractionRunStatus.VALIDATING:
         run.error_code = None
@@ -55,6 +99,7 @@ async def _transition(
         if run.started_at is None:
             run.started_at = datetime.now(UTC)
     await session.commit()
+    _log_state_change(run, from_status, status.value)
 
 
 def _hash_storage_file(storage: DocumentStorage, storage_uri: str) -> str:
@@ -494,6 +539,7 @@ async def _execute_extraction_run_locked(
             ]
         else:
             path = _storage_path(storage, document.storage_uri)
+            vision_usage_before = _vision_usage(vision_provider)
             if document.media_type == "application/pdf":
                 parsed = await parse_pdf(
                     path,
@@ -515,7 +561,17 @@ async def _execute_extraction_run_locked(
                         **chunk.__dict__,
                     )
                 )
-            run.parse_metadata = parsed.metadata
+            parse_metadata = dict(parsed.metadata)
+            # OCR results are reused on retry, so record what they cost now.
+            vision_usage_after = _vision_usage(vision_provider)
+            ocr_usage = {
+                key: value - vision_usage_before.get(key, 0)
+                for key, value in vision_usage_after.items()
+                if value - vision_usage_before.get(key, 0)
+            }
+            if ocr_usage:
+                parse_metadata["ocr_usage"] = ocr_usage
+            run.parse_metadata = parse_metadata
             await session.commit()
         await embed_run_chunks(session, run.id, embedding_provider)
         await session.commit()
@@ -533,7 +589,11 @@ async def _execute_extraction_run_locked(
             max_tokens=extraction_group_max_tokens,
         )
         run.raw_agent_response = extraction_result.raw_response
-        run.usage_metadata = extraction_result.usage
+        usage_metadata = dict(extraction_result.usage)
+        ocr_usage = (run.parse_metadata or {}).get("ocr_usage")
+        if ocr_usage:
+            usage_metadata["ocr"] = ocr_usage
+        run.usage_metadata = usage_metadata
 
         await _transition(session, run, ExtractionRunStatus.VALIDATING_OUTPUT)
         schema_errors = validate_candidate_schema(extraction_result.payload)
@@ -561,24 +621,30 @@ async def _execute_extraction_run_locked(
         candidate.schema_errors = schema_errors
         candidate.domain_errors = domain_errors
         candidate.status = status.value
+        from_status = run.status
         run.status = ExtractionRunStatus.AWAITING_REVIEW.value
         run.error_code = None
         run.error_detail = {}
         await session.commit()
+        _log_state_change(run, from_status, run.status)
         return run
     except ProviderError as exc:
+        failed_in = run.status
         run.status = ExtractionRunStatus.FAILED.value
         run.error_code = exc.code
         run.error_detail = {"retryable": exc.retryable}
         run.finished_at = datetime.now(UTC)
         await session.commit()
+        _log_failure(run, failed_in, retryable=exc.retryable, status_code=exc.status_code)
         raise
     except Exception as exc:
+        failed_in = run.status
         run.status = ExtractionRunStatus.FAILED.value
         run.error_code = "extraction_failed"
         run.error_detail = {"error_type": type(exc).__name__}
         run.finished_at = datetime.now(UTC)
         await session.commit()
+        _log_failure(run, failed_in, error_type=type(exc).__name__)
         raise
 
 

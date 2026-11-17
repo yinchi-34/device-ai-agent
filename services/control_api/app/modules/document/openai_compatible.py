@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import json
+import logging
+import time
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
@@ -148,6 +150,9 @@ def _inline_local_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 
+model_logger = logging.getLogger("app.model")
+
+
 class _OpenAICompatibleProvider:
     def __init__(
         self,
@@ -166,7 +171,40 @@ class _OpenAICompatibleProvider:
         self.max_output_tokens = max_output_tokens
         self.transport = transport
 
+    # What the call is for, as it appears in logs: extract, ocr or embed.
+    purpose = "model"
+
     async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Send one request and log its outcome, timing and token usage.
+
+        The log never includes the payload, the response body or the API key.
+        """
+        started = time.perf_counter()
+        fields: dict[str, Any] = {"purpose": self.purpose, "model": self.model}
+        try:
+            response = await self._send(path, payload)
+        except ProviderError as exc:
+            fields.update(
+                outcome="error",
+                status_code=exc.status_code,
+                error_code=exc.code,
+                retryable=exc.retryable,
+            )
+            raise
+        else:
+            fields.update(outcome="ok", status_code=200)
+            usage = response.get("usage")
+            if isinstance(usage, dict):
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    if isinstance(usage.get(key), int):
+                        fields[key] = usage[key]
+            return response
+        finally:
+            fields["duration_ms"] = round((time.perf_counter() - started) * 1000, 1)
+            level = logging.INFO if fields["outcome"] == "ok" else logging.WARNING
+            model_logger.log(level, "model_call", extra=fields)
+
+    async def _send(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         try:
             async with asyncio.timeout(self.timeout_seconds):
@@ -222,6 +260,8 @@ def _chat_content(response: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 class OpenAICompatibleExtractionProvider(_OpenAICompatibleProvider):
+    purpose = "extract"
+
     async def extract(
         self, chunks: Sequence[NormalizedChunk], context: dict[str, Any]
     ) -> ExtractionResult:
@@ -311,6 +351,19 @@ def _normalize_vision_block(block: object) -> VisionBlock:
 
 
 class OpenAICompatibleVisionProvider(_OpenAICompatibleProvider):
+    purpose = "ocr"
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        # Running token totals for this provider; the pipeline records them
+        # because OCR results are cached and the usage would otherwise be lost.
+        self.usage_totals: dict[str, int] = {
+            "calls": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
     async def extract_page(
         self, image_bytes: bytes, page_number: int
     ) -> list[VisionBlock]:
@@ -343,7 +396,11 @@ class OpenAICompatibleVisionProvider(_OpenAICompatibleProvider):
                 ],
             },
         )
-        content, _ = _chat_content(response)
+        content, usage = _chat_content(response)
+        self.usage_totals["calls"] += 1
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            if isinstance(usage.get(key), int):
+                self.usage_totals[key] += usage[key]
         try:
             payload = json.loads(content)
             blocks = payload["blocks"]
@@ -357,6 +414,8 @@ class OpenAICompatibleVisionProvider(_OpenAICompatibleProvider):
 
 
 class OpenAICompatibleEmbeddingProvider(_OpenAICompatibleProvider):
+    purpose = "embed"
+
     async def embed(self, texts: Sequence[str]) -> EmbeddingResult:
         response = await self._post(
             "/embeddings", {"model": self.model, "input": list(texts)}
