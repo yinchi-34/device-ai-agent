@@ -7,6 +7,7 @@ from typing import BinaryIO, Protocol
 from uuid import uuid4
 
 from app.modules.document.file_validation import (
+    DocumentValidationError,
     ValidatedDocument,
     validate_stored_document,
 )
@@ -25,6 +26,8 @@ class DocumentStorage(Protocol):
         self,
         original_file_name: str,
         chunks: AsyncIterable[bytes] | Iterable[bytes],
+        *,
+        max_bytes: int | None = None,
     ) -> StoredDocument:
         raise NotImplementedError
 
@@ -57,7 +60,14 @@ class FileSystemDocumentStorage:
         self,
         original_file_name: str,
         chunks: AsyncIterable[bytes] | Iterable[bytes],
+        *,
+        max_bytes: int | None = None,
     ) -> StoredDocument:
+        """Write an upload into quarantine, stopping as soon as it exceeds max_bytes.
+
+        The limit is checked before each chunk is written, so the file on disk never
+        grows past max_bytes and an oversized stream is not read to the end.
+        """
         suffix = Path(original_file_name).suffix.lower()
         if suffix not in {".pdf", ".docx"}:
             suffix = ".bin"
@@ -71,6 +81,11 @@ class FileSystemDocumentStorage:
                 async for chunk in _iterate_chunks(chunks):
                     if not isinstance(chunk, bytes):
                         raise TypeError("document chunks must be bytes")
+                    if max_bytes is not None and size_bytes + len(chunk) > max_bytes:
+                        raise DocumentValidationError(
+                            "document_too_large",
+                            "The document exceeds the configured size limit",
+                        )
                     stream.write(chunk)
                     size_bytes += len(chunk)
         except BaseException:
@@ -128,7 +143,9 @@ async def validate_and_promote(
     max_file_bytes: int,
     max_pdf_pages: int,
 ) -> tuple[StoredDocument, ValidatedDocument]:
-    stored = await storage.save_quarantine(original_file_name, chunks)
+    stored = await storage.save_quarantine(
+        original_file_name, chunks, max_bytes=max_file_bytes
+    )
     try:
         validated = validate_stored_document(
             stored.path,

@@ -90,6 +90,7 @@ services:
     environment:
       GATEWAY_SITE_ADDRESS: ${DEVICE_GATEWAY_SITE_ADDRESS:-:80}
       GATEWAY_ALLOWED_CIDRS: ${DEVICE_GATEWAY_ALLOWED_CIDRS:-private_ranges}
+      GATEWAY_MAX_REQUEST_BODY: ${DEVICE_GATEWAY_MAX_REQUEST_BODY:-30MB}
     volumes:
       - ./deploy/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - gateway-data:/data
