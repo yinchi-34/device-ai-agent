@@ -11,3 +11,6 @@ __pycache__/
 
 # Internal design docs (kept local only)
 docs/
+
+# Local experiments, downloaded manuals, and operator scratch scripts.
+tmp/

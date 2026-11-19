@@ -1,0 +1,54 @@
+name: Control API regression
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/control_api
+    env:
+      DEVICE_DATABASE_URL: postgresql+psycopg://device:ci-local-only@localhost:5432/device_ai_agent_test
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: device_ai_agent_test
+          POSTGRES_USER: device
+          POSTGRES_PASSWORD: ci-local-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U device -d device_ai_agent_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/control_api/pyproject.toml
+      - run: python -m pip install -e '.[dev]'
+      - run: ruff check ../..
+      - run: alembic upgrade head
+      - run: pytest -v --junitxml=test-results.xml
+      - run: alembic current
+      - run: alembic check
+      - name: Replay regression (no API credentials)
+        run: python -m scripts.run_diagnosis_evals --mode replay --trials 3 --output evals/diagnosis/reports/ci-replay.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-and-replay-results
+          path: |
+            services/control_api/test-results.xml
+            services/control_api/evals/diagnosis/reports/ci-replay.json

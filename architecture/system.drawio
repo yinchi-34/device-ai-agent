@@ -1,0 +1,20 @@
+<mxfile host="app.diagrams.net"><diagram name="System"><mxGraphModel dx="1100" dy="800" grid="1" gridSize="10"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="ui" value="Chinese workbench / REST API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc" vertex="1" parent="1"><mxGeometry x="40" y="40" width="240" height="60" as="geometry"/></mxCell>
+<mxCell id="api" value="FastAPI / Pydantic / SQLAlchemy 2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc" vertex="1" parent="1"><mxGeometry x="40" y="150" width="240" height="60" as="geometry"/></mxCell>
+<mxCell id="agent" value="Bounded diagnosis loop&#xa;Input rules / tool schemas / audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4" vertex="1" parent="1"><mxGeometry x="350" y="150" width="250" height="70" as="geometry"/></mxCell>
+<mxCell id="db" value="PostgreSQL 16 + pgvector&#xa;Profiles / audit / scoped vector search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc" vertex="1" parent="1"><mxGeometry x="40" y="320" width="260" height="70" as="geometry"/></mxCell>
+<mxCell id="worker" value="Redis + Celery document worker&#xa;Parse / extract / human review / DRAFT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4" vertex="1" parent="1"><mxGeometry x="350" y="320" width="270" height="70" as="geometry"/></mxCell>
+<mxCell id="model" value="External model / embedding providers&#xa;OpenAI-compatible HTTP endpoints" style="rounded=1;whiteSpace=wrap;html=1;dashed=1" vertex="1" parent="1"><mxGeometry x="700" y="150" width="270" height="70" as="geometry"/></mxCell>
+<mxCell id="gateway" value="External read-only gateway&#xa;POST /read-point (not bundled)" style="rounded=1;whiteSpace=wrap;html=1;dashed=1" vertex="1" parent="1"><mxGeometry x="700" y="320" width="270" height="70" as="geometry"/></mxCell>
+<mxCell id="eval" value="40 synthetic fixtures&#xa;Scripted replay / live model eval" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7" vertex="1" parent="1"><mxGeometry x="350" y="40" width="250" height="60" as="geometry"/></mxCell>
+<mxCell id="e1" edge="1" parent="1" source="ui" target="api"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e2" edge="1" parent="1" source="api" target="agent"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e3" edge="1" parent="1" source="api" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e4" edge="1" parent="1" source="api" target="worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e5" edge="1" parent="1" source="agent" target="model"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e6" edge="1" parent="1" source="agent" target="gateway"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e7" edge="1" parent="1" source="agent" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e8" edge="1" parent="1" source="worker" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e9" edge="1" parent="1" source="worker" target="model"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e10" edge="1" parent="1" source="eval" target="agent"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram></mxfile>

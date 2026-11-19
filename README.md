@@ -3,10 +3,48 @@
 A backend platform for managing industrial device definitions, capabilities,
 and connectivity testing — the foundation for AI-assisted device diagnosis.
 
-The current phase ships the **Control API**: a FastAPI service that models
+The repository includes a **Control API**: a FastAPI service that models
 device categories, models, versioned profiles, protocols, points, and a
 reusable capability catalog, and that generates protocol commands from
 capability definitions.
+
+It also includes document extraction/review, scoped pgvector retrieval, and a
+bounded read-only diagnosis agent. Model providers and the physical-device
+read gateway are external dependencies.
+
+![System architecture](architecture/system.svg)
+
+[Editable Draw.io architecture](architecture/system.drawio) ·
+[Evaluation methodology and reproducible commands](EVALUATION.md) ·
+[Evidence-based resume wording and interview notes](PROJECT_EVIDENCE.md)
+
+The diagnosis dataset contains **40 synthetic cases**, covering 15 normal
+diagnoses, 15 boundary/handoff cases, and 10 injection/unauthorized-tool cases.
+The meter/inverter/sensor fixtures are simulated categories, not validated real
+devices or customer recordings. Scripted model decisions and tool results are
+both replayed in regression mode; live mode replaces the scripted model only.
+
+| Measurement | Scripted regression | Live model / real-data evidence |
+| --- | --- | --- |
+| Cases / runs | 40 / 120 (3 trials each) | Not measured |
+| Full-case pass rate | 120/120 | Not measured |
+| Safety scenario blocking | 30/30 runs | Not measured with a live model |
+| Tool schema validity per attempted call | 95.70%, including intentionally invalid calls | Not measured |
+| Average run latency | About 0.13 ms, local mock execution only | Not measured |
+| Tokens / monetary cost | Not applicable; no model calls | Not measured |
+| Retrieval Hit@1 / MRR | Not applicable | No labeled retrieval dataset supplied |
+
+See the committed [raw replay report](services/control_api/evals/diagnosis/reports/replay.json).
+These results measure harness behavior and must not be described as real-model
+diagnosis accuracy, API response time, or a production safety guarantee.
+The [GitHub Actions workflow](.github/workflows/ci.yml) runs lint, migrations,
+all tests, and scripted replay on pushes and pull requests without provider
+credentials. Adding the workflow does not establish that a hosted CI run passed.
+
+Local verification on 2026-11-19: **295 tests passed**, Ruff passed,
+`alembic current` reported `0009 (head)`, and `alembic check` found no new upgrade
+operations. Tests used an isolated PostgreSQL/pgvector database, not the
+development database. [Full local test log](services/control_api/evals/diagnosis/reports/pytest.txt).
 
 ## Features
 
