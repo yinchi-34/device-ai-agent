@@ -90,8 +90,14 @@ class DiagnosisAgent:
         steps = list(existing_steps)
         if input_policy_blocked(diagnosis.symptom):
             return await self._terminal_policy_violation(
-                steps, len(steps) + 1, "input_guard", {}, "", {},
-                "input_policy_blocked", on_step,
+                steps,
+                len(steps) + 1,
+                "input_guard",
+                {},
+                "",
+                {},
+                "input_policy_blocked",
+                on_step,
             )
         tool_definitions = list(self.toolbox.definitions())
         executable_names = {tool.name for tool in tool_definitions}
@@ -193,10 +199,14 @@ class DiagnosisAgent:
                     on_step,
                 )
 
-            definition = next(t for t in tool_definitions if t.name == decision.tool_name)
-            errors = list(Draft202012Validator(definition.parameters).iter_errors(
-                decision.arguments
-            ))
+            definition = next(
+                t for t in tool_definitions if t.name == decision.tool_name
+            )
+            errors = list(
+                Draft202012Validator(definition.parameters).iter_errors(
+                    decision.arguments
+                )
+            )
             if errors:
                 result = {
                     "status": "invalid_tool_arguments",
@@ -260,11 +270,15 @@ class DiagnosisAgent:
 
 def _valid_evidence_references(arguments: dict, *, completed_step_count: int) -> bool:
     references = arguments.get("evidence_step_numbers")
-    return isinstance(references, list) and bool(references) and all(
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 1 <= value <= completed_step_count
-        for value in references
+    return (
+        isinstance(references, list)
+        and bool(references)
+        and all(
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and 1 <= value <= completed_step_count
+            for value in references
+        )
     )
 
 

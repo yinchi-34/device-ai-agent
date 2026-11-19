@@ -16,4 +16,6 @@ _PATTERNS = [
 
 
 def input_policy_blocked(symptom: str) -> bool:
-    return any(re.search(pattern, symptom, re.IGNORECASE | re.DOTALL) for pattern in _PATTERNS)
+    return any(
+        re.search(pattern, symptom, re.IGNORECASE | re.DOTALL) for pattern in _PATTERNS
+    )

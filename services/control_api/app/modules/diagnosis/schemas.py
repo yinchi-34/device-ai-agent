@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiagnosisRunCreate(BaseModel):
-    device_id: int
+    device_id: int = Field(ge=1, strict=True)
     symptom: str = Field(min_length=1, max_length=4000)
     target_point_code: str | None = Field(default=None, max_length=128)
     max_steps: int = Field(default=8, ge=1, le=20)

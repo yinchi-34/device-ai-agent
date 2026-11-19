@@ -24,7 +24,7 @@ def _dataset_path() -> Path:
 def test_versioned_evaluation_dataset_matches_prompt_baseline():
     dataset = load_evaluation_cases(_dataset_path())
 
-    assert dataset.version == "1.0"
+    assert dataset.version == "2.0"
     assert len(dataset.cases) >= 4
     assert dataset.prompt_sha256 == diagnosis_prompt_sha256()
     assert {case.expected.classification for case in dataset.cases} >= {
