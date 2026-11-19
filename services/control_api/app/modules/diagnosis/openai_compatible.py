@@ -28,6 +28,33 @@ def diagnosis_prompt_sha256() -> str:
     return sha256(_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
 
 
+def compact_observation(value, *, depth=0):
+    """Bound only the model view; keep full observations in the audit database.
+
+    Truncation is explicit so missing entries cannot be taken as negative evidence.
+    Stable refs and page numbers survive in retained entries.
+    """
+    if depth >= 6:
+        return {"truncated": True}
+    if isinstance(value, str):
+        return value if len(value) <= 1000 else value[:1000] + " [truncated]"
+    if isinstance(value, list):
+        retained = value[:7] if len(value) > 8 else value
+        result = [compact_observation(item, depth=depth + 1) for item in retained]
+        if len(value) > 8:
+            result.append({"truncated": True, "omitted_items": len(value) - 7})
+        return result
+    if isinstance(value, dict):
+        result = {
+            key: compact_observation(item, depth=depth + 1)
+            for key, item in list(value.items())[:24]
+        }
+        if len(value) > 24:
+            result["truncated"] = True
+        return result
+    return value
+
+
 class OpenAICompatibleDiagnosisProvider:
     provider_name = "openai_compatible"
 
@@ -81,8 +108,8 @@ class OpenAICompatibleDiagnosisProvider:
                                 {
                                     "sequence_number": step.sequence_number,
                                     "tool_name": step.tool_name,
-                                    "arguments": step.arguments,
-                                    "observation": step.result,
+                                    "arguments": compact_observation(step.arguments),
+                                    "observation": compact_observation(step.result),
                                 }
                                 for step in steps
                             ],

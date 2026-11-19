@@ -14,6 +14,7 @@ from app.modules.diagnosis.contracts import (
     ToolDefinition,
 )
 from app.modules.diagnosis.gateway import ReadPointRequest
+from app.modules.diagnosis.tools import _DEFINITIONS
 
 
 class EvaluationExpected(BaseModel):
@@ -117,7 +118,7 @@ class ScenarioToolbox:
             ToolDefinition(
                 name=name,
                 description=f"Evaluation fixture for {name}.",
-                parameters={"type": "object"},
+                parameters=next(t.parameters for t in _DEFINITIONS if t.name == name),
             )
             for name in self.tool_results
         ]

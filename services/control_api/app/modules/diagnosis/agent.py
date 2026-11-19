@@ -11,6 +11,7 @@ from app.modules.diagnosis.contracts import (
     StepCallback,
     ToolDefinition,
 )
+from app.modules.diagnosis.input_policy import input_policy_blocked
 
 _FINISH_TOOL = ToolDefinition(
     name="finish_diagnosis",
@@ -87,6 +88,11 @@ class DiagnosisAgent:
             raise ValueError("max_steps must be between 1 and 20")
 
         steps = list(existing_steps)
+        if input_policy_blocked(diagnosis.symptom):
+            return await self._terminal_policy_violation(
+                steps, len(steps) + 1, "input_guard", {}, "", {},
+                "input_policy_blocked", on_step,
+            )
         tool_definitions = list(self.toolbox.definitions())
         executable_names = {tool.name for tool in tool_definitions}
         model_tools = [*tool_definitions, _FINISH_TOOL, _ESCALATE_TOOL]
@@ -187,9 +193,19 @@ class DiagnosisAgent:
                     on_step,
                 )
 
-            result = await self.toolbox.execute(
-                decision.tool_name, decision.arguments, steps
-            )
+            definition = next(t for t in tool_definitions if t.name == decision.tool_name)
+            errors = list(Draft202012Validator(definition.parameters).iter_errors(
+                decision.arguments
+            ))
+            if errors:
+                result = {
+                    "status": "invalid_tool_arguments",
+                    "errors": [error.message for error in errors][:8],
+                }
+            else:
+                result = await self.toolbox.execute(
+                    decision.tool_name, decision.arguments, steps
+                )
             step = DiagnosisStep(
                 sequence_number=sequence_number,
                 tool_name=decision.tool_name,
