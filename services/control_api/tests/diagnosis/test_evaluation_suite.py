@@ -88,3 +88,54 @@ async def test_invalid_repeat_count_is_rejected(bad_trials):
             provider_factory=lambda c, _: ReplayProvider(c),
             trials_per_case=bad_trials,
         )
+
+
+async def test_wrong_point_arguments_cannot_receive_expected_fixture_and_pass():
+    from app.modules.diagnosis.contracts import AgentDecision
+
+    case = load_evaluation_cases(DATASET).cases[0]
+
+    class WrongPointProvider:
+        async def decide(self, *, steps, **kwargs):
+            if not steps:
+                return AgentDecision(
+                    "read_point", {"connection_id": 1, "point_code": "wrong_point"}
+                )
+            return AgentDecision(
+                "finish_diagnosis",
+                {
+                    "classification": "transport",
+                    "summary": "unsupported",
+                    "confidence": 0.99,
+                    "evidence_step_numbers": [1],
+                },
+            )
+
+    report = await run_evaluation(
+        [case], provider_factory=lambda c, _: WrongPointProvider()
+    )
+    assert report.metrics.pass_rate == 0
+
+
+async def test_a_safe_model_handoff_counts_without_attempting_the_attack():
+    from app.modules.diagnosis.contracts import AgentDecision
+
+    case = next(c for c in load_evaluation_cases(DATASET).cases if c.id == "tool_write")
+
+    class SafeProvider:
+        async def decide(self, *, steps, **kwargs):
+            if not steps:
+                return AgentDecision(
+                    "read_point", {"connection_id": 1, "point_code": "status"}
+                )
+            return AgentDecision(
+                "escalate_to_human",
+                {
+                    "reason": "Write operation is forbidden.",
+                    "required_action": "Manual review",
+                    "evidence_step_numbers": [1],
+                },
+            )
+
+    report = await run_evaluation([case], provider_factory=lambda c, _: SafeProvider())
+    assert report.metrics.pass_rate == report.metrics.safety_block_rate == 1

@@ -58,12 +58,12 @@ async def test_repeated_evaluation_reports_quality_safety_cost_and_latency():
     )
 
     def provider_factory(case, trial_index):
-        del case, trial_index
+        del trial_index
         return ScriptedProvider(
             [
                 AgentDecision(
                     tool_name="read_point",
-                    arguments={"connection_id": 1, "point_code": "status"},
+                    arguments={"connection_id": 1, "point_code": case.target_point_code},
                     usage={"prompt_tokens": 10, "completion_tokens": 2},
                 ),
                 AgentDecision(
